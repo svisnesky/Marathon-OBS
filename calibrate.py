@@ -1,12 +1,14 @@
-"""One-time calibration: drag-select the kill-feed rectangle on a screenshot.
+"""One-time calibration: drag-select the detection rectangle on a live frame.
 
-Run on the gaming PC while Marathon (or a screenshot of it) is showing the feed:
+Run on the gaming PC with the relevant thing on screen:
 
     python calibrate.py
 
-A window opens with a full screenshot of your primary monitor. Drag a box
-around the kill-feed area, then press ENTER (or SPACE). The pixel rectangle is
-printed and written into config.yaml under `feed_region`.
+In popup mode: box the center "RUNNER DOWN +XP" popup area.
+In killfeed mode: box the kill feed.
+
+The pixel rectangle is written into config.yaml under `detect_region`,
+preserving all comments and other settings.
 """
 
 from __future__ import annotations
@@ -26,6 +28,9 @@ def main():
     with open(CONFIG_PATH) as f:
         cfg = yaml.safe_load(f)
     source = cfg.get("capture_source", "obs_virtualcam")
+    mode = cfg.get("detection_mode", "popup")
+    target = ("the center RUNNER DOWN / +XP popup area" if mode == "popup"
+              else "the kill feed")
 
     if source == "screen":
         print("Grabbing a screenshot of your primary monitor...")
@@ -35,10 +40,9 @@ def main():
               "(make sure it's started in OBS)...")
         shot = grab_full_virtualcam(cam_index=cfg.get("obs_virtualcam_index", 0))
     h, w = shot.shape[:2]
-    print(f"Screenshot is {w}x{h}. Drag a box around the kill feed, then press ENTER.")
+    print(f"Frame is {w}x{h}. Drag a box around {target}, then press ENTER.")
 
-    # cv2.selectROI handles the drag-select UI for us.
-    win = "Select kill-feed region — drag a box, then ENTER (c = cancel)"
+    win = f"Select region ({mode} mode) — drag a box, then ENTER (c = cancel)"
     x, y, bw, bh = cv2.selectROI(win, shot, showCrosshair=True, fromCenter=False)
     cv2.destroyAllWindows()
 
@@ -47,26 +51,26 @@ def main():
         sys.exit(1)
 
     region = {"x": int(x), "y": int(y), "w": int(bw), "h": int(bh)}
-    print(f"Selected feed_region: {region}")
+    print(f"Selected detect_region: {region}")
 
-    # Replace just the feed_region block in-place so config comments are preserved.
+    # Replace just the detect_region block in-place so config comments survive.
     with open(CONFIG_PATH) as f:
         text = f.read()
     new_block = (
-        "feed_region:\n"
+        "detect_region:\n"
         f"  x: {region['x']}\n"
         f"  y: {region['y']}\n"
         f"  w: {region['w']}\n"
         f"  h: {region['h']}\n"
     )
-    pattern = re.compile(r"feed_region:\n(?:[ \t]+\w+:.*\n?)+")
+    pattern = re.compile(r"detect_region:\n(?:[ \t]+\w+:.*\n?)+")
     if pattern.search(text):
         text = pattern.sub(new_block, text, count=1)
     else:
         text = text.rstrip() + "\n\n" + new_block
     with open(CONFIG_PATH, "w") as f:
         f.write(text)
-    print(f"Wrote feed_region into {CONFIG_PATH}. You're calibrated.")
+    print(f"Wrote detect_region into {CONFIG_PATH}. You're calibrated.")
 
 
 if __name__ == "__main__":

@@ -94,87 +94,87 @@ OBS preview. The tool reads what OBS sees.
 
 ## Phase 3 — Fill in config.yaml
 
-Open `config.yaml` in Notepad (or any editor) and set:
+Defaults are set for **popup mode** (watching the center "RUNNER DOWN +XP"
+popup). Open `config.yaml` in Notepad and set:
 
 | Setting | What to put |
 |---|---|
-| `player_name` | Your **exact** in-game display name |
-| `name_aliases` | Add your name again, plus any likely OCR misreads (e.g. `l`↔`I`, `0`↔`O`) |
 | `obs: password` | The OBS websocket password from Phase 2, step 1 |
 | `obs: port` | Match Phase 2 (default `4455` is already set) |
 | `capture_source` | Leave `obs_virtualcam` (recommended) |
+| `detection_mode` | Leave `popup` |
+| `popup_trigger_phrases` | Leave `["RUNNER DOWN"]` for now |
 
-Leave everything else at defaults for now — you'll tune timing/OCR later if needed.
+Leave everything else at defaults — you'll tune after testing.
 
 Save the file.
 
 ---
 
-## Phase 4 — Calibrate the kill-feed region
+## Phase 4 — Calibrate the popup region
 
-This tells the tool *where* on the frame the kill feed appears.
+This tells the tool *where* the "RUNNER DOWN +XP" popup shows up.
 
-1. Get Marathon (or a screenshot of it) showing the kill feed. Easiest: be in a
-   match, or have a saved screenshot with feed text visible.
+1. Get a frame showing the popup — a saved screenshot (like the one already
+   shared) works, or be in a match and get a down.
 2. Make sure OBS **Virtual Camera is running** (Phase 2, step 4).
 3. Run:
    ```bat
    python calibrate.py
    ```
-4. A window opens showing a frame from OBS. **Drag a box** tightly around the
-   kill-feed area (where the "X downed Y" lines show up), then press **ENTER**.
+4. A window opens showing a frame from OBS. **Drag a box** around the center area
+   where **"RUNNER DOWN  +15 XP"** appears (just under the crosshair), then press
+   **ENTER**. Leave some margin so it fits even when the XP number changes.
 
-**You should see:** `Wrote feed_region into config.yaml. You're calibrated.`
+**You should see:** `Wrote detect_region into config.yaml. You're calibrated.`
 
 **Tips:**
-- Crop tight to just the feed text — less background = better OCR.
+- Box the popup zone, not the whole screen — less background = cleaner OCR.
 - If you change resolution or HUD scale later, re-run this.
-- If the window is black/empty, the Virtual Camera isn't running or
-  `obs_virtualcam_index` is wrong (try `1` or `2` in config.yaml).
+- Black/empty window = Virtual Camera isn't running, or `obs_virtualcam_index`
+  is wrong (try `1` or `2` in config.yaml).
 
 ---
 
 ## Phase 5 — Test detection logic (no game needed)
 
-Confirm the name-matching does what you expect. Replace `YourName` with your
-actual name:
+Confirm the phrase trigger works. Each argument is treated as one frame:
 
 ```bat
-python main.py --test-lines "YourName downed Ripper" "SomeoneElse downed Bob" "Ripper downed YourName"
+python main.py --test-lines "RUNNER DOWN  +15 XP" "SOUTH RELAY" "LIGHT ROUNDS 002"
 ```
 
-**You should see:**
-- `[KILL ]` on the first line (your kill)
-- `[  -  ]` on the second (someone else's kill — ignored)
-- `[  -  ]` on the third (your death — ignored)
-
-If your own kill shows `[  -  ]`, your `player_name` doesn't match — fix it in
-config.yaml.
+**You should see:** `[KILL ]` on the first (the popup phrase), `[  -  ]` on the
+unrelated HUD lines.
 
 ---
 
 ## Phase 6 — Test OCR on a real screenshot (the important checkpoint)
 
-This is where we find out if Marathon's font reads cleanly.
+This is where we find out if Marathon's popup font reads cleanly.
 
-1. In a match, take a screenshot when the kill feed is showing several lines.
-   Save it as e.g. `shot.png` in the `Marathon-OBS` folder.
+1. Take a screenshot **at the moment "RUNNER DOWN +XP" is on screen**. Save it as
+   e.g. `shot.png` in the `Marathon-OBS` folder.
 2. Run:
    ```bat
    python main.py --test-image shot.png
    ```
 
-**You should see:** the OCR-read lines printed, then a detection verdict for each.
+**You should see:** the text OCR'd from your region, then
+`RESULT (popup): KILL detected` (or "no kill detected").
 
 **Judge the result:**
-- If the feed lines come back readable and your kills are flagged `[KILL ]`,
-  you're in great shape — go to Phase 7.
-- If the text is garbled or missed, tune (see Phase 9) and re-run this step.
+- Detected and text reads cleanly → great, go to Phase 7.
+- Garbled or missed → tune (see Phase 9) and re-run this step.
 - **Send me the screenshot + the console output** and I'll adjust the OCR
-  preprocessing / detection to match Marathon's exact feed format (including how
-  it shows assists).
+  preprocessing and phrase list to match Marathon exactly.
 
 Iterate on this step until detection is reliable **before** going live.
+
+> **Still needed from you:** screenshots of an **assist**, a **final kill /
+> elimination** (if the game distinguishes it from a down), and **you getting
+> downed**. Those let me add the right trigger phrases and guarantee it never
+> fires on your own death.
 
 ---
 
@@ -220,10 +220,10 @@ All in `config.yaml`:
 
 | Problem | Try this |
 |---|---|
-| Missing your kills | Lower `name_match_threshold` (e.g. 75); add `name_aliases`; raise `ocr_upscale` to 4; re-calibrate a tighter region |
-| False positives / double counts | Raise `name_match_threshold` (e.g. 88); raise `dedup_ttl_seconds` |
-| Counting others' kills | Set `match_mode: self_only` |
-| Wrong verb | Add the game's actual word(s) to `trigger_keywords` (e.g. `eliminated`, `killed`) |
+| Missing your kills | Raise `ocr_upscale` to 4; lower `popup_match_threshold` (e.g. 72); re-calibrate a tighter `detect_region`; add the exact popup wording to `popup_trigger_phrases` |
+| False positives | Raise `popup_match_threshold` (e.g. 88); set `require_xp_reward: true` |
+| Rapid multi-kills counted as one | Lower `popup_absence_frames` to 1; raise `poll_fps` |
+| Missing assists / finishes | Add their exact phrases (e.g. `ASSIST`, `ELIMINATED`) to `popup_trigger_phrases` |
 | Too many overlapping clips | Raise `min_save_interval_seconds` |
 | OCR too slow | Ensure GPU is used (EasyOCR); or switch `ocr_engine: tesseract` |
 
@@ -253,6 +253,6 @@ python main.py
 | `could not verify/start Replay Buffer` | Enable Replay Buffer in OBS Output settings |
 | Counter never updates | Text source must be named exactly `KillCounter` |
 | Can't connect to OBS | Wrong `password`/`port` in config; WebSocket server not enabled |
-| Nothing detected at all | Re-check `feed_region` (Phase 4) and run Phase 6 on a screenshot |
+| Nothing detected at all | Re-check `detect_region` (Phase 4) and run Phase 6 on a screenshot |
 
 When in doubt on Phase 6, send me the screenshot and console output.

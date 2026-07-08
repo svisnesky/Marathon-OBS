@@ -8,7 +8,7 @@ import sys
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from detector import KillDetector  # noqa: E402
+from detector import KillDetector, PopupDetector  # noqa: E402
 
 
 def make(mode="self_or_assist", **kw):
@@ -114,6 +114,73 @@ def test_process_lines_batch():
     events = d.process_lines(lines, now=1.0)
     assert len(events) == 2
     assert {e.victim.strip() for e in events} == {"Alpha", "Bravo"}
+
+
+# --- PopupDetector tests -----------------------------------------------------
+
+def popup(**kw):
+    return PopupDetector(
+        trigger_phrases=["RUNNER DOWN"],
+        phrase_match_threshold=80,
+        absence_frames=2,
+        **kw,
+    )
+
+
+def test_popup_fires_on_appearance():
+    p = popup()
+    ev = p.process_frame(["RUNNER DOWN", "+15 XP"], now=1.0)
+    assert ev is not None
+    assert ev.is_self_kill is True
+
+
+def test_popup_lingering_counts_once():
+    p = popup()
+    assert p.process_frame(["RUNNER DOWN +15 XP"], now=1.0) is not None
+    # popup still on screen the next frames -> no new events
+    assert p.process_frame(["RUNNER DOWN +15 XP"], now=1.2) is None
+    assert p.process_frame(["RUNNER DOWN +15 XP"], now=1.4) is None
+
+
+def test_popup_recounts_after_disappearing():
+    p = popup()
+    assert p.process_frame(["RUNNER DOWN +15 XP"], now=1.0) is not None
+    # popup gone for >= absence_frames frames
+    assert p.process_frame([], now=1.2) is None
+    assert p.process_frame([], now=1.4) is None
+    # a second down later -> fires again
+    assert p.process_frame(["RUNNER DOWN +15 XP"], now=3.0) is not None
+
+
+def test_popup_single_flicker_does_not_recount():
+    p = popup()  # absence_frames=2
+    assert p.process_frame(["RUNNER DOWN"], now=1.0) is not None
+    # one dropped frame (OCR flicker) then popup returns -> still same popup
+    assert p.process_frame([], now=1.2) is None
+    assert p.process_frame(["RUNNER DOWN"], now=1.4) is None
+
+
+def test_popup_ignores_unrelated_text():
+    p = popup()
+    assert p.process_frame(["SOUTH RELAY", "LIGHT ROUNDS 002"], now=1.0) is None
+    assert p.process_frame(["029"], now=1.2) is None
+
+
+def test_popup_ocr_garbled_phrase_still_fires():
+    p = popup()
+    # 'RUNNER D0WN' with a zero, extra noise
+    ev = p.process_frame(["RUNNER D0WN  +15 XP"], now=1.0)
+    assert ev is not None
+
+
+def test_popup_require_xp_reward():
+    p = popup(require_xp_reward=True)
+    # phrase present but no XP -> objective/other popup, ignored
+    assert p.process_frame(["RUNNER DOWN"], now=1.0) is None
+    # phrase + XP reward -> fires
+    assert p.process_frame([], now=1.2) is None
+    assert p.process_frame([], now=1.4) is None
+    assert p.process_frame(["RUNNER DOWN +15 XP"], now=2.0) is not None
 
 
 if __name__ == "__main__":

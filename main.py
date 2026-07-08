@@ -18,7 +18,7 @@ import time
 
 import yaml
 
-from detector import KillDetector
+from detector import KillDetector, PopupDetector
 
 CONFIG_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "config.yaml")
 
@@ -28,15 +28,36 @@ def load_config(path=CONFIG_PATH) -> dict:
         return yaml.safe_load(f)
 
 
-def build_detector(cfg: dict) -> KillDetector:
-    return KillDetector(
-        player_name=cfg["player_name"],
-        name_aliases=cfg.get("name_aliases"),
-        trigger_keywords=cfg.get("trigger_keywords"),
-        match_mode=cfg.get("match_mode", "self_or_assist"),
-        name_match_threshold=cfg.get("name_match_threshold", 82),
-        dedup_ttl_seconds=cfg.get("dedup_ttl_seconds", 8.0),
-    )
+def build_detector(cfg: dict):
+    """Return (detector, mode). mode is 'popup' or 'killfeed'."""
+    mode = cfg.get("detection_mode", "popup")
+    if mode == "popup":
+        det = PopupDetector(
+            trigger_phrases=cfg.get("popup_trigger_phrases", ["RUNNER DOWN"]),
+            phrase_match_threshold=cfg.get("popup_match_threshold", 80),
+            absence_frames=cfg.get("popup_absence_frames", 2),
+            require_xp_reward=cfg.get("require_xp_reward", False),
+        )
+    elif mode == "killfeed":
+        det = KillDetector(
+            player_name=cfg["player_name"],
+            name_aliases=cfg.get("name_aliases"),
+            trigger_keywords=cfg.get("trigger_keywords"),
+            match_mode=cfg.get("match_mode", "self_or_assist"),
+            name_match_threshold=cfg.get("name_match_threshold", 82),
+            dedup_ttl_seconds=cfg.get("dedup_ttl_seconds", 8.0),
+        )
+    else:
+        raise ValueError(f"Unknown detection_mode: {mode!r} (use 'popup' or 'killfeed')")
+    return det, mode
+
+
+def detect_events(det, mode: str, lines, now: float) -> list:
+    """Uniform interface over both detectors -> list of KillEvents for this frame."""
+    if mode == "popup":
+        ev = det.process_frame(lines, now)
+        return [ev] if ev else []
+    return det.process_lines(lines, now)
 
 
 def log_kill(cfg: dict, event, count: int) -> None:
@@ -58,15 +79,22 @@ def log_kill(cfg: dict, event, count: int) -> None:
 # --- offline test helpers ----------------------------------------------------
 
 def run_test_lines(cfg: dict, lines):
-    det = build_detector(cfg)
-    now = time.monotonic()
-    print(f"Testing {len(lines)} line(s), player='{cfg['player_name']}', "
-          f"mode='{cfg.get('match_mode')}':\n")
-    for ln in lines:
-        ev = det.process_line(ln, now)
-        verdict = "KILL " if ev else "  -  "
-        extra = f"(self_kill={ev.is_self_kill}, victim='{ev.victim.strip()}')" if ev else ""
-        print(f"  [{verdict}] {ln!r} {extra}")
+    det, mode = build_detector(cfg)
+    print(f"Detection mode: {mode}. Testing {len(lines)} line(s):\n")
+    if mode == "popup":
+        # Each arg is treated as one frame's OCR output (space-split into lines).
+        for i, ln in enumerate(lines):
+            ev = detect_events(det, mode, ln.split("  "), now=float(i))
+            verdict = "KILL " if ev else "  -  "
+            print(f"  [{verdict}] frame {i}: {ln!r}")
+    else:
+        now = time.monotonic()
+        for ln in lines:
+            evs = det.process_lines([ln], now)
+            ev = evs[0] if evs else None
+            verdict = "KILL " if ev else "  -  "
+            extra = f"(self_kill={ev.is_self_kill}, victim='{ev.victim.strip()}')" if ev else ""
+            print(f"  [{verdict}] {ln!r} {extra}")
 
 
 def run_test_image(cfg: dict, image_path: str):
@@ -79,11 +107,21 @@ def run_test_image(cfg: dict, image_path: str):
     engine = OCREngine(cfg.get("ocr_engine", "easyocr"), cfg.get("ocr_upscale", 3))
     print(f"OCR ({engine.engine_name}) on {image_path} ...")
     lines = engine.read_lines(img)
-    print(f"Read {len(lines)} line(s):")
+    print(f"Read {len(lines)} line(s) from the region:")
     for ln in lines:
         print(f"   {ln!r}")
     print()
-    run_test_lines(cfg, lines)
+
+    # A screenshot is a SINGLE frame — evaluate all its lines together.
+    det, mode = build_detector(cfg)
+    events = detect_events(det, mode, lines, now=0.0)
+    if events:
+        print(f"RESULT ({mode}): KILL detected -> {events[0].raw_line!r}")
+    else:
+        print(f"RESULT ({mode}): no kill detected in this frame.")
+        print("  If this frame SHOULD be a kill: check the region covers the "
+              "popup, add the exact phrase to popup_trigger_phrases, or lower "
+              "popup_match_threshold / ocr_upscale.")
 
 
 # --- live loop ---------------------------------------------------------------
@@ -93,7 +131,7 @@ def run_live(cfg: dict, dry_run: bool):
     from ocr import OCREngine
     from obs_client import OBSClient, DryRunOBS
 
-    det = build_detector(cfg)
+    det, mode = build_detector(cfg)
     engine = OCREngine(cfg.get("ocr_engine", "easyocr"), cfg.get("ocr_upscale", 3))
 
     obs_cfg = cfg.get("obs", {})
@@ -118,8 +156,9 @@ def run_live(cfg: dict, dry_run: bool):
     min_save = cfg.get("min_save_interval_seconds", 2.0)
     last_save = 0.0
 
-    print(f"Watching kill feed at {poll_fps} fps via {cfg.get('capture_source')}. "
-          f"Region={cfg['feed_region']}. "
+    region = cfg.get("detect_region") or cfg.get("feed_region")
+    print(f"Detecting [{mode}] at {poll_fps} fps via {cfg.get('capture_source')}. "
+          f"Region={region}. "
           f"{'DRY-RUN' if dry_run else 'LIVE'}. Ctrl-C to stop.\n")
 
     with make_capture(cfg) as cap:
@@ -128,7 +167,7 @@ def run_live(cfg: dict, dry_run: bool):
                 loop_start = time.monotonic()
                 img = cap.grab()
                 lines = engine.read_lines(img)
-                events = det.process_lines(lines, now=loop_start)
+                events = detect_events(det, mode, lines, now=loop_start)
 
                 for ev in events:
                     now = time.monotonic()

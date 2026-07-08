@@ -1,20 +1,23 @@
-"""Kill-feed detection logic.
+"""Detection logic — the brain of the tool, fully unit-testable without OBS/Windows.
 
-Turns raw OCR text lines into confirmed KillEvents. This is the brain of the
-tool and the only part that is fully unit-testable without a Windows PC / OBS.
+Two detectors, chosen by `detection_mode` in config:
 
-A kill-feed line looks like:  "<killer> downed <victim>"
-We match it when the player's name (fuzzily, to tolerate OCR errors) appears
-either as the killer (self_only) or anywhere in the line (self_or_assist).
+  PopupDetector (recommended, default):
+      Watches the center-screen personal confirmation popup that appears ONLY
+      when you get a down, e.g. "RUNNER DOWN  +15 XP". Because it's your own
+      reward popup, no name matching is needed. Edge-triggered: fires once each
+      time the popup appears, then re-arms after it disappears.
 
-Lingering feed lines are de-duplicated with a short TTL so one kill is counted
-once even though the line stays on screen (and re-OCRs) for several seconds.
+  KillDetector (fallback):
+      Parses the kill feed "<killer> <verb> <victim>" and fuzzy-matches your
+      name. Useful only if the game exposes a text kill feed with a matchable
+      verb. (Marathon's feed uses icons, not words, so popup mode is preferred.)
 """
 
 from __future__ import annotations
 
 import re
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import Iterable, Optional
 
 from rapidfuzz import fuzz
@@ -151,3 +154,68 @@ class KillDetector:
             if ev:
                 events.append(ev)
         return events
+
+
+class PopupDetector:
+    """Edge-triggered detection of the transient personal down/kill popup
+    (e.g. 'RUNNER DOWN  +15 XP').
+
+    A whole OCR'd frame is passed in per call. The popup lingers for a couple of
+    seconds and re-OCRs every frame, so we fire only on the RISING EDGE — the
+    first frame it appears — then re-arm once it's been absent for a few frames
+    (debounce against OCR flicker). Two separate downs count separately as long
+    as the popup fully disappears between them.
+    """
+
+    def __init__(
+        self,
+        trigger_phrases: Optional[Iterable[str]] = None,
+        phrase_match_threshold: int = 80,
+        absence_frames: int = 2,
+        require_xp_reward: bool = False,
+    ):
+        self.phrases = [_normalize(p) for p in (trigger_phrases or ["runner down"]) if p.strip()]
+        self.threshold = phrase_match_threshold
+        self.absence_frames = max(1, absence_frames)
+        self.require_xp_reward = require_xp_reward
+        self._present = False
+        self._absent_count = absence_frames  # start armed (as if long absent)
+
+    def _xp_reward_present(self, blob: str) -> bool:
+        # matches "+15 xp", "15xp", "+ 15 xp" after normalization strips '+'
+        return re.search(r"\b\d{1,4}\s?xp\b", blob) is not None
+
+    def _matches(self, lines: Iterable[str]) -> Optional[str]:
+        blob = _normalize(" ".join(lines))
+        if not blob:
+            return None
+        if self.require_xp_reward and not self._xp_reward_present(blob):
+            return None
+        for ph in self.phrases:
+            if ph and (ph in blob or fuzz.partial_ratio(ph, blob) >= self.threshold):
+                return ph
+        return None
+
+    def process_frame(self, lines: Iterable[str], now: float) -> Optional[KillEvent]:
+        lines = list(lines)
+        matched = self._matches(lines)
+
+        if matched is not None:
+            rising_edge = not self._present
+            self._present = True
+            self._absent_count = 0
+            if rising_edge:
+                return KillEvent(
+                    timestamp=now,
+                    raw_line=" ".join(lines).strip(),
+                    killer="",
+                    victim="",
+                    is_self_kill=True,
+                )
+            return None
+
+        # no match this frame
+        self._absent_count += 1
+        if self._absent_count >= self.absence_frames:
+            self._present = False
+        return None

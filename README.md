@@ -3,14 +3,20 @@
 Automatically saves a video clip and bumps an on-screen counter every time you
 get a kill (or assist) in **Marathon**.
 
-Marathon has no public kill API, so this tool *watches the kill feed*: it reads
-the feed region, OCRs the text, and when a `downed` line contains your name it
-(1) tells **OBS** to save its **Replay Buffer** as a clip and (2) updates a
-**Text source** counter in OBS.
+Marathon has no public kill API, so this tool *watches your screen*. By default
+it watches the center-screen personal confirmation popup that appears only when
+you get a down — **"RUNNER DOWN  +XX XP"** — OCRs that region, and when the
+popup appears it (1) tells **OBS** to save its **Replay Buffer** as a clip and
+(2) updates a **Text source** counter in OBS.
 
 ```
-feed frame  ->  OCR  ->  detector (your name? + dedup)  ->  OBS save replay + counter
+popup region  ->  OCR  ->  detector (phrase seen? edge-trigger)  ->  OBS save replay + counter
 ```
+
+Watching *your own* "RUNNER DOWN +XP" popup is more reliable than reading the
+kill feed: it fires only for your downs, so there's no name-matching to get
+wrong. (A `killfeed` fallback mode that parses `<killer> <verb> <victim>` and
+matches your name is still available — see `detection_mode` in config.)
 
 ## Anti-cheat note
 
@@ -62,42 +68,45 @@ pip install -r requirements.txt
 
 ## 3. Configure
 
-Edit `config.yaml`:
+Edit `config.yaml` (defaults are set for **popup mode**):
 
-- `player_name` — your **exact** in-game display name.
-- `name_aliases` — common OCR misreads of your name (e.g. `l`/`I`, `0`/`O`).
 - `obs.password` — the OBS websocket password from step 1.
-- `trigger_keywords` — leave `["downed"]`; add `eliminated`/`killed` if you see
-  the game use other verbs.
-- `match_mode` — `self_or_assist` (kills + assists) or `self_only`.
+- `popup_trigger_phrases` — leave `["RUNNER DOWN"]`; add the exact wording for
+  kills/assists once you see them (e.g. `ELIMINATED`, `ASSIST`).
+- `require_xp_reward` — set `true` if non-combat popups cause false triggers.
 
-## 4. Calibrate the feed region
+(Only needed for the `killfeed` fallback mode: `player_name`, `name_aliases`,
+`trigger_keywords`, `match_mode`.)
 
-With Marathon (or a screenshot showing the kill feed) on screen:
+## 4. Calibrate the detection region
+
+With Marathon (or a screenshot) on screen showing the relevant area — in popup
+mode, the center **"RUNNER DOWN +XP"** popup zone:
 
 ```bat
 python calibrate.py
 ```
 
-Drag a box around the kill-feed area, press **ENTER**. This writes `feed_region`
-into `config.yaml`. Re-run if you change resolution or HUD scale.
+Drag a box around it, press **ENTER**. This writes `detect_region` into
+`config.yaml`. Re-run if you change resolution or HUD scale.
 
 ## 5. Test before going live
 
-**Detection logic only** (no OCR, no OBS):
+**Detection logic only** (no OCR, no OBS) — each argument is one frame:
 
 ```bat
-python main.py --test-lines "YourName downed Ripper" "Ghost downed Bob" "Ripper downed YourName"
+python main.py --test-lines "RUNNER DOWN  +15 XP" "SOUTH RELAY"
 ```
 
-**OCR on a saved screenshot** (grab one with the kill feed visible):
+**OCR on a saved screenshot** (grab one at the moment the popup shows):
 
 ```bat
 python main.py --test-image path\to\shot.png
 ```
 
-Confirm it reads the feed lines and flags *your* kills. Tune `ocr_upscale`,
-`name_match_threshold`, and `name_aliases` until detection is reliable.
+It prints the OCR'd text from your region and whether a kill was detected. Tune
+`ocr_upscale`, `popup_match_threshold`, and `popup_trigger_phrases` until it's
+reliable.
 
 **Full pipeline, but OBS actions only logged** (safe live rehearsal):
 
@@ -120,21 +129,23 @@ source, and appends a row to `session_log.csv`.
 
 | file | role |
 |------|------|
-| `config.yaml` | all settings (name, region, OBS, timing) |
-| `calibrate.py` | drag-select the kill-feed region |
-| `capture.py` | mss screen-region grab |
+| `config.yaml` | all settings (mode, phrases, region, OBS, timing) |
+| `calibrate.py` | drag-select the detection region |
+| `capture.py` | OBS Virtual Camera / mss region grab |
 | `ocr.py` | preprocess + OCR (EasyOCR / Tesseract) |
-| `detector.py` | parse feed, fuzzy name match, dedup — the core logic |
+| `detector.py` | `PopupDetector` (default) + `KillDetector` (fallback) — the core logic |
 | `obs_client.py` | obs-websocket: save replay + update counter |
 | `main.py` | wires it together; test/dry-run modes |
-| `tests/` | unit tests for the detector (`python tests/test_detector.py`) |
+| `tests/` | unit tests for the detectors (`python tests/test_detector.py`) |
 
 ## Tuning / troubleshooting
 
-- **Missing kills:** lower `name_match_threshold`, add `name_aliases`, raise
-  `ocr_upscale`, or re-calibrate a tighter `feed_region`.
-- **False positives / double counts:** raise `name_match_threshold`, increase
-  `dedup_ttl_seconds`.
+- **Missing kills:** raise `ocr_upscale`, lower `popup_match_threshold`, re-calibrate
+  a tighter `detect_region`, or add the exact popup wording to `popup_trigger_phrases`.
+- **False positives:** raise `popup_match_threshold`, set `require_xp_reward: true`,
+  or increase `popup_absence_frames`.
+- **Rapid multi-kills counted as one:** the popup didn't fully disappear between
+  them; lower `popup_absence_frames` and/or raise `poll_fps`.
 - **No clips saved:** confirm Replay Buffer is enabled and a recording path is set;
   check the OBS websocket password/port.
 - **OCR slow:** EasyOCR's first call loads models (slow once). Ensure GPU is used;
@@ -142,7 +153,7 @@ source, and appends a row to `session_log.csv`.
 
 ## Known limits
 
-- Detection depends on the kill feed being visible and readable — obscured or
-  very fast feeds may be missed.
-- "downed" in an extraction shooter may differ from a confirmed elimination;
-  adjust `trigger_keywords` to match what you actually want to clip.
+- Detection depends on the popup being visible and readable in the captured frame.
+- Back-to-back downs where the popup never fully clears may count as one.
+- Exact wording for kills vs assists vs finishes may differ — add those phrases
+  to `popup_trigger_phrases` once you observe them.

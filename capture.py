@@ -11,8 +11,8 @@ Two sources, chosen in config (`capture_source`):
       Screenshot the monitor directly with mss. Simpler, no Virtual Camera
       needed, but our own process performs the screen grab.
 
-Both return the cropped feed region as a BGR numpy array using the same
-`feed_region` pixel rectangle, so calibration is shared.
+Both return the cropped region as a BGR numpy array using the same
+`detect_region` pixel rectangle, so calibration is shared.
 """
 
 from __future__ import annotations
@@ -101,7 +101,7 @@ class VirtualCamCapture:
 def make_capture(cfg: dict):
     """Factory: build the capture source named in config."""
     src = cfg.get("capture_source", "obs_virtualcam")
-    region = cfg["feed_region"]
+    region = cfg.get("detect_region") or cfg["feed_region"]  # feed_region = legacy name
     if src == "screen":
         return RegionCapture(region, monitor_index=cfg.get("monitor_index", 1))
     if src == "obs_virtualcam":

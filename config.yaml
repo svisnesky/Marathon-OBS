@@ -1,50 +1,63 @@
 # Marathon Auto Kill Recorder — configuration
 # Edit these values; no code changes needed.
 
-# --- Who counts as "you" ---
-# Your exact in-game display name as it appears in the kill feed.
-player_name: "YOUR_NAME_HERE"
-# OCR mis-reads names sometimes. Add common misreads of your name here so they
-# still count (e.g. lowercase L vs capital I, 0 vs O). Case-insensitive.
+# =========================================================================
+# DETECTION MODE
+#   popup    -> (recommended) watch the center-screen personal confirmation
+#               popup that appears only when YOU get a down, e.g.
+#               "RUNNER DOWN  +15 XP". No name matching needed.
+#   killfeed -> parse the bottom kill feed "<killer> <verb> <victim>" and match
+#               your name. Only useful if the feed uses a real word (Marathon's
+#               feed uses icons, so popup mode is preferred).
+# =========================================================================
+detection_mode: "popup"
+
+# --- POPUP MODE settings ---
+# Phrases that mean "you got a down/kill/assist". Case-insensitive, fuzzy-matched
+# so OCR slips (e.g. RUNNER D0WN) still count. Add more once you see the exact
+# wording for kills/assists (e.g. "ELIMINATED", "ASSIST").
+popup_trigger_phrases:
+  - "RUNNER DOWN"
+popup_match_threshold: 80    # 0-100 fuzzy score to accept a phrase
+popup_absence_frames: 2      # popup must vanish this many frames before it can re-fire
+# require_xp_reward: only fire if a "+NN XP" reward is also visible in the region.
+# Guards against non-combat popups, but set false if it causes missed kills.
+require_xp_reward: false
+
+# --- KILLFEED MODE settings (only used when detection_mode: killfeed) ---
+player_name: "MRVIZNASTY"    # your exact in-game display name
 name_aliases:
-  - "YOUR_NAME_HERE"
-
-# self_or_assist -> trigger when your name appears ANYWHERE in a downed line.
-# self_only      -> trigger only when YOU are the killer (name before the verb).
-match_mode: "self_or_assist"
-
-# --- What a "kill" line looks like ---
-# The verb(s) that indicate a kill. Case-insensitive. Marathon uses "downed";
-# add "eliminated" / "killed" here if you see the game use them too.
+  - "MRVIZNASTY"
+match_mode: "self_or_assist" # self_or_assist | self_only
 trigger_keywords:
   - "downed"
-
-# Minimum fuzzy-match score (0-100) for a name to count as you. Lower = more
-# lenient (catches more OCR errors but risks false positives). 82 is a good start.
 name_match_threshold: 82
 
-# --- Capture source ---
-# obs_virtualcam -> read OBS's Virtual Camera (recommended: OBS captures the game,
-#                   we only read a webcam device -> lower anti-cheat exposure).
-#                   Requires clicking "Start Virtual Camera" in OBS.
-# screen         -> screenshot the monitor directly with mss (simpler, no Virtual
-#                   Camera needed, but our process does the screen grab).
+# =========================================================================
+# CAPTURE SOURCE
+#   obs_virtualcam -> read OBS's Virtual Camera (recommended: OBS captures the
+#                     game, we only read a webcam device -> lower anti-cheat
+#                     exposure). Requires "Start Virtual Camera" in OBS.
+#   screen         -> screenshot the monitor directly with mss (simpler, but our
+#                     process does the screen grab).
+# =========================================================================
 capture_source: "obs_virtualcam"
 obs_virtualcam_index: 0     # which webcam device is the OBS Virtual Camera (try 0,1,2)
 monitor_index: 1            # only used when capture_source: screen (1 = primary)
 
-# --- Where the kill feed is in the captured frame (set by calibrate.py) ---
-# Pixel rectangle within the captured frame. Calibrate against the SAME source
-# you'll run with (run: python calibrate.py — it uses capture_source).
-feed_region:
-  x: 0
-  y: 0
-  w: 700
-  h: 300
+# --- Region of the frame to OCR (set by calibrate.py) ---
+# In popup mode: the box around the center "RUNNER DOWN +XP" popup.
+# In killfeed mode: the box around the kill feed.
+# Calibrate against the SAME capture_source you'll run with.
+detect_region:
+  x: 780
+  y: 760
+  w: 460
+  h: 110
 
 # --- Timing ---
-poll_fps: 5                 # how many times/sec to screenshot + OCR the region
-dedup_ttl_seconds: 8.0      # remember a matched line this long so it counts once
+poll_fps: 6                 # frames/sec to capture + OCR
+dedup_ttl_seconds: 8.0      # killfeed mode: remember a matched line this long
 min_save_interval_seconds: 2.0  # floor between OBS replay saves (avoid clip spam)
 
 # --- OCR ---
