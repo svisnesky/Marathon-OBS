@@ -231,9 +231,30 @@ Re-run Phase 6 / Phase 7 after any change.
 
 ---
 
-## Quick reference — everyday use
+## Easiest way — just double-click
 
-Once it's all set up, a normal session is just:
+You don't have to type any commands. In the `Marathon-OBS` folder there are
+double-click launchers. Run them in this order the first time:
+
+| Double-click this | What it does |
+|---|---|
+| **`1 - Calibrate.bat`** | Pick where the "RUNNER DOWN +XP" popup is on screen |
+| **`2 - Test Screenshot.bat`** | Check detection on a screenshot (you can drag a `.png` onto it) |
+| **`3 - Dry Run (test, saves nothing).bat`** | Full rehearsal — counts kills, saves nothing |
+| **`START Kill Recorder.bat`** | The real thing — saves a clip + counts each kill |
+
+The **first** time you run any of them it sets everything up automatically
+(this takes several minutes — it downloads the OCR engine). After that they
+start in a couple of seconds.
+
+Windows may show a blue "Windows protected your PC" box the first time — click
+**More info -> Run anyway**. That's just Windows being cautious about scripts.
+
+Still fill in `config.yaml` (OBS password) and do the OBS setup in Phase 2 first.
+
+## Quick reference — the typed-command equivalent
+
+If you ever prefer the terminal instead of double-clicking:
 
 ```bat
 cd %USERPROFILE%\Documents\Marathon-OBS

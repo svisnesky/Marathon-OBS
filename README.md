@@ -54,6 +54,11 @@ No guarantees are made about Bungie's policies — use at your own discretion.
 
 ## 2. Install
 
+**Easiest:** after cloning, just double-click the `.bat` launchers (see
+[NEXT_STEPS.md](NEXT_STEPS.md)) — the first run installs everything for you.
+
+Manual equivalent:
+
 ```bat
 git clone <your-repo-url> marathon-kill-recorder
 cd marathon-kill-recorder
