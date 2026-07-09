@@ -61,6 +61,14 @@ class OBSClient:
             print(f"ERROR saving replay buffer: {e}")
             return False
 
+    def get_last_replay_path(self) -> str:
+        """Path of the most recently saved Replay Buffer clip, or '' if unknown."""
+        try:
+            r = self._client.get_last_replay_buffer_replay()
+            return getattr(r, "saved_replay_path", "") or ""
+        except Exception:
+            return ""
+
     def set_counter(self, count: int) -> None:
         text = self.counter_format.format(count=count)
         try:
@@ -83,6 +91,9 @@ class DryRunOBS:
     def save_replay(self) -> bool:
         print("[dry-run] save_replay() -> would save OBS Replay Buffer clip")
         return True
+
+    def get_last_replay_path(self) -> str:
+        return ""
 
     def set_counter(self, count: int) -> None:
         print(f"[dry-run] set_counter({count})")

@@ -14,8 +14,10 @@ from __future__ import annotations
 import argparse
 import csv
 import os
+import shutil
 import threading
 import time
+from collections import Counter
 
 import yaml
 
@@ -96,6 +98,42 @@ def play_kill_sound(cfg: dict) -> None:
         except Exception:
             pass
     threading.Thread(target=_beep, daemon=True).start()
+
+
+def classify_event(raw_line: str) -> str:
+    """Tag a kill by type from its popup text (for clip names + the recap)."""
+    from detector import _normalize
+    b = _normalize(raw_line)
+    if "precision" in b:
+        return "precision"
+    if "finisher" in b:
+        return "finisher"
+    if "assist" in b or "elim" in b:
+        return "assist"
+    if "down" in b:
+        return "down"
+    return "kill"
+
+
+def rename_clip_async(obs, session_id: str, tag: str, count: int) -> None:
+    """In the background: wait for OBS to finish writing the clip, then move it
+    into a per-session folder with an event+time name. Never blocks or raises
+    into the capture loop — on any hiccup the clip just keeps OBS's default name."""
+    def work():
+        try:
+            time.sleep(1.3)  # let OBS finish writing the file
+            path = obs.get_last_replay_path()
+            if not path or not os.path.exists(path):
+                return
+            base = os.path.dirname(path)
+            ext = os.path.splitext(path)[1] or ".mkv"
+            sdir = os.path.join(base, "Marathon Sessions", session_id)
+            os.makedirs(sdir, exist_ok=True)
+            newname = f"{count:03d}_{tag}_{time.strftime('%H-%M-%S')}{ext}"
+            shutil.move(path, os.path.join(sdir, newname))
+        except Exception:
+            pass
+    threading.Thread(target=work, daemon=True).start()
 
 
 def should_overlay(cfg: dict, raw_line: str) -> bool:
@@ -239,6 +277,13 @@ def run_live(cfg: dict, dry_run: bool):
     min_save = cfg.get("min_save_interval_seconds", 2.0)
     last_save = 0.0
 
+    # session tracking (for clip organizing + end-of-session recap)
+    organize = cfg.get("organize_clips", True) and not dry_run
+    session_id = time.strftime("%Y-%m-%d_%H-%M-%S")
+    session_start_wall = time.strftime("%H:%M")
+    session_start = time.monotonic()
+    session_tags = []
+
     region = cfg.get("detect_region") or cfg.get("feed_region")
     print(f"Detecting [{mode}] at {poll_fps} fps via {cfg.get('capture_source')}. "
           f"Region={region}. "
@@ -255,7 +300,9 @@ def run_live(cfg: dict, dry_run: bool):
                 for ev in events:
                     now = time.monotonic()
                     count += 1
-                    print(f"KILL #{count}: {ev.raw_line!r}")
+                    tag = classify_event(ev.raw_line)
+                    session_tags.append(tag)
+                    print(f"KILL #{count} [{tag}]: {ev.raw_line!r}")
                     play_kill_sound(cfg)
                     if should_overlay(cfg, ev.raw_line):
                         print("  -> HEADSHOT (skull popup)")
@@ -265,6 +312,8 @@ def run_live(cfg: dict, dry_run: bool):
                     if now - last_save >= min_save:
                         if obs.save_replay():
                             last_save = now
+                            if organize:
+                                rename_clip_async(obs, session_id, tag, count)
                     else:
                         print("  (skipped replay save — within min_save_interval)")
 
@@ -273,7 +322,45 @@ def run_live(cfg: dict, dry_run: bool):
                 if elapsed < interval:
                     time.sleep(interval - elapsed)
         except KeyboardInterrupt:
-            print(f"\nStopped. Total kills this session: {count}")
+            pass
+
+    _end_session(cfg, session_tags, session_start, session_start_wall, dry_run)
+
+
+def _end_session(cfg, tags, start_monotonic, start_wall, dry_run):
+    total = len(tags)
+    dur_min = max(0.01, (time.monotonic() - start_monotonic) / 60.0)
+    c = Counter(tags)
+    print("\n" + "-" * 44)
+    print(f"Session over. Kills: {total}  |  precision {c.get('precision', 0)}  "
+          f"finisher {c.get('finisher', 0)}  assist {c.get('assist', 0)}  "
+          f"downs {c.get('down', 0) + c.get('kill', 0)}")
+    print(f"Duration: {dur_min:.1f} min  |  {total / dur_min:.2f} kills/min")
+
+    if total == 0 or dry_run:
+        return
+    session = {
+        "date": time.strftime("%Y-%m-%d"),
+        "start": start_wall,
+        "duration_min": round(dur_min, 1),
+        "total": total,
+        "precision": c.get("precision", 0),
+        "finisher": c.get("finisher", 0),
+        "assist": c.get("assist", 0),
+        "down": c.get("down", 0) + c.get("kill", 0),
+        "kpm": round(total / dur_min, 2),
+    }
+    try:
+        import stats
+        base = os.path.dirname(os.path.abspath(__file__))
+        html_path = stats.record_session(base, session)
+        print(f"Recap: {html_path}")
+        try:
+            os.startfile(html_path)  # auto-open in browser (Windows)
+        except Exception:
+            pass
+    except Exception as e:
+        print(f"(could not write recap: {e})")
 
 
 def main():

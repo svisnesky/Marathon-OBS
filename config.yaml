@@ -97,5 +97,9 @@ overlay_alpha: 1.0                  # 0-1 opacity of the floating skull (lower =
 overlay_events:                     # kill texts that trigger the image
   - "PRECISION DOWN"
 
+# --- Clips + recap ---
+organize_clips: true   # rename each saved clip by event+time and sort into a
+                       # per-session folder ("Marathon Sessions/<date_time>/")
+
 # --- Logging ---
 session_log: "session_log.csv"
