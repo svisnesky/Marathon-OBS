@@ -388,13 +388,15 @@ def _tray_icon_image(base: str, cfg: dict):
 def run_tray(cfg: dict, dry_run: bool):
     """Run with a system-tray skull icon instead of a console window."""
     base = os.path.dirname(os.path.abspath(__file__))
-    # No console in pythonw mode — send output to a log file for troubleshooting.
-    try:
-        logf = open(os.path.join(base, "marathon.log"), "a", buffering=1, encoding="utf-8")
-        sys.stdout = logf
-        sys.stderr = logf
-    except Exception:
-        pass
+    # Under pythonw there's no console (sys.stdout is None), so send output to a
+    # log file. When run from a real console, keep printing there so you can debug.
+    if sys.stdout is None:
+        try:
+            logf = open(os.path.join(base, "marathon.log"), "a", buffering=1, encoding="utf-8")
+            sys.stdout = logf
+            sys.stderr = logf
+        except Exception:
+            pass
 
     try:
         import pystray
