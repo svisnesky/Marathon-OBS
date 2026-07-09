@@ -142,21 +142,45 @@ def classify_event(raw_line: str) -> str:
 def rename_clip_async(obs, session_id: str, tag: str, count: int) -> None:
     """In the background: wait for OBS to finish writing the clip, then move it
     into a per-session folder with an event+time name. Never blocks or raises
-    into the capture loop — on any hiccup the clip just keeps OBS's default name."""
+    into the capture loop — on any hiccup the clip just keeps OBS's default name.
+    Prints what it does so clip organizing can be diagnosed."""
     def work():
         try:
-            time.sleep(1.3)  # let OBS finish writing the file
-            path = obs.get_last_replay_path()
-            if not path or not os.path.exists(path):
+            # Wait for OBS to report the path AND finish writing (size stabilizes).
+            path, prev_size = "", -1
+            for _ in range(16):  # up to ~8s
+                time.sleep(0.5)
+                path = obs.get_last_replay_path()
+                if path and os.path.exists(path):
+                    sz = os.path.getsize(path)
+                    if sz > 0 and sz == prev_size:
+                        break
+                    prev_size = sz
+            if not path:
+                print("  [organize] OBS did not report a clip path "
+                      "(GetLastReplayBufferReplay came back empty)")
                 return
+            if not os.path.exists(path):
+                print(f"  [organize] clip path not found on disk: {path}")
+                return
+
             base = os.path.dirname(path)
             ext = os.path.splitext(path)[1] or ".mkv"
             sdir = os.path.join(base, "Marathon Sessions", session_id)
             os.makedirs(sdir, exist_ok=True)
-            newname = f"{count:03d}_{tag}_{time.strftime('%H-%M-%S')}{ext}"
-            shutil.move(path, os.path.join(sdir, newname))
-        except Exception:
-            pass
+            dest = os.path.join(sdir, f"{count:03d}_{tag}_{time.strftime('%H-%M-%S')}{ext}")
+
+            for attempt in range(4):  # retry if the file is briefly locked
+                try:
+                    shutil.move(path, dest)
+                    print(f"  [organize] clip -> {dest}")
+                    return
+                except Exception as e:
+                    last = e
+                    time.sleep(0.7)
+            print(f"  [organize] could not move clip: {last}")
+        except Exception as e:
+            print(f"  [organize] error: {e}")
     threading.Thread(target=work, daemon=True).start()
 
 
