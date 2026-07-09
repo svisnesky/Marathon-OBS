@@ -102,16 +102,22 @@ def play_kill_sound(cfg: dict) -> None:
 
 
 def classify_event(raw_line: str) -> str:
-    """Tag a kill by type from its popup text (for clip names + the recap)."""
+    """Tag a kill by type from its popup text (for clip names + the recap).
+    Fuzzy so OCR slips like 'Runner Dorm' still read as a down."""
     from detector import _normalize
+    from rapidfuzz import fuzz
     b = _normalize(raw_line)
-    if "precision" in b:
+
+    def has(p):
+        return p in b or fuzz.partial_ratio(p, b) >= 78
+
+    if has("precision"):
         return "precision"
-    if "finisher" in b:
+    if has("finisher"):
         return "finisher"
-    if "assist" in b or "elim" in b:
+    if has("assist") or has("elim"):
         return "assist"
-    if "down" in b:
+    if has("down") or has("runner down"):
         return "down"
     return "kill"
 
@@ -278,6 +284,16 @@ def run_live(cfg: dict, dry_run: bool = False, stop_event=None, on_count=None):
     min_save = cfg.get("min_save_interval_seconds", 2.0)
     last_save = 0.0
 
+    # independent watcher for the skull overlay, so a precision down still fires
+    # the skull even when it follows a normal down in the same popup window.
+    overlay_det = None
+    if cfg.get("show_overlays", True) and mode == "popup":
+        overlay_det = PopupDetector(
+            trigger_phrases=cfg.get("overlay_events") or ["PRECISION DOWN"],
+            phrase_match_threshold=cfg.get("popup_match_threshold", 80),
+            absence_frames=cfg.get("popup_absence_frames", 2),
+        )
+
     # session tracking (for clip organizing + end-of-session recap)
     organize = cfg.get("organize_clips", True) and not dry_run
     session_id = time.strftime("%Y-%m-%d_%H-%M-%S")
@@ -305,9 +321,6 @@ def run_live(cfg: dict, dry_run: bool = False, stop_event=None, on_count=None):
                     session_tags.append(tag)
                     print(f"KILL #{count} [{tag}]: {ev.raw_line!r}")
                     play_kill_sound(cfg)
-                    if should_overlay(cfg, ev.raw_line):
-                        print("  -> HEADSHOT (skull popup)")
-                        show_overlay(cfg)
                     obs.set_counter(count)
                     if on_count is not None:
                         on_count(count)
@@ -319,6 +332,13 @@ def run_live(cfg: dict, dry_run: bool = False, stop_event=None, on_count=None):
                                 rename_clip_async(obs, session_id, tag, count)
                     else:
                         print("  (skipped replay save — within min_save_interval)")
+
+                # skull overlay: independent per-frame check for precision downs
+                if overlay_det is not None:
+                    oev = overlay_det.process_frame(lines, now=loop_start)
+                    if oev:
+                        print("  -> HEADSHOT (skull popup)")
+                        show_overlay(cfg)
 
                 # pace the loop
                 elapsed = time.monotonic() - loop_start
@@ -429,8 +449,15 @@ def run_tray(cfg: dict, dry_run: bool):
     worker = threading.Thread(
         target=run_live, args=(cfg, dry_run, stop_event, on_count), daemon=True)
     worker.start()
-    icon.run()               # blocks on the main thread until Quit
+    try:
+        icon.run()           # blocks on the main thread until Quit
+    except KeyboardInterrupt:
+        pass
     stop_event.set()
+    try:
+        icon.stop()
+    except Exception:
+        pass
     worker.join(timeout=10)  # let the end-of-session recap finish
 
 
