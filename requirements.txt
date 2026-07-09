@@ -16,3 +16,6 @@ pytesseract>=0.3.10
 
 # OBS control (obs-websocket v5)
 obsws-python>=1.6
+
+# Optional: system-tray skull icon (run with --tray). Pillow comes via easyocr.
+pystray>=0.19

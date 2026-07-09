@@ -15,6 +15,7 @@ import argparse
 import csv
 import os
 import shutil
+import sys
 import threading
 import time
 from collections import Counter
@@ -247,7 +248,7 @@ def run_test_image(cfg: dict, image_path: str):
 
 # --- live loop ---------------------------------------------------------------
 
-def run_live(cfg: dict, dry_run: bool):
+def run_live(cfg: dict, dry_run: bool = False, stop_event=None, on_count=None):
     from capture import make_capture
     from ocr import OCREngine
     from obs_client import OBSClient, DryRunOBS
@@ -291,7 +292,7 @@ def run_live(cfg: dict, dry_run: bool):
 
     with make_capture(cfg) as cap:
         try:
-            while True:
+            while not (stop_event is not None and stop_event.is_set()):
                 loop_start = time.monotonic()
                 img = cap.grab()
                 lines = engine.read_lines(img)
@@ -308,6 +309,8 @@ def run_live(cfg: dict, dry_run: bool):
                         print("  -> HEADSHOT (skull popup)")
                         show_overlay(cfg)
                     obs.set_counter(count)
+                    if on_count is not None:
+                        on_count(count)
                     log_kill(cfg, ev, count)
                     if now - last_save >= min_save:
                         if obs.save_replay():
@@ -363,6 +366,72 @@ def _end_session(cfg, tags, start_monotonic, start_wall, dry_run):
         print(f"(could not write recap: {e})")
 
 
+def _tray_icon_image(base: str, cfg: dict):
+    """Build a square tray icon from the skull PNG (transparent, centered)."""
+    from PIL import Image
+    size = 64
+    canvas = Image.new("RGBA", (size, size), (0, 0, 0, 0))
+    try:
+        p = os.path.join(base, cfg.get("overlay_image", "marathon_skull.png"))
+        im = Image.open(p).convert("RGBA")
+        scale = min(size / im.width, size / im.height)
+        nw, nh = max(1, round(im.width * scale)), max(1, round(im.height * scale))
+        im = im.resize((nw, nh), Image.LANCZOS)
+        canvas.paste(im, ((size - nw) // 2, (size - nh) // 2), im)
+    except Exception:
+        # fallback: a plain acid-yellow square
+        from PIL import ImageDraw
+        ImageDraw.Draw(canvas).rectangle([6, 6, size - 6, size - 6], fill=(211, 242, 75, 255))
+    return canvas
+
+
+def run_tray(cfg: dict, dry_run: bool):
+    """Run with a system-tray skull icon instead of a console window."""
+    base = os.path.dirname(os.path.abspath(__file__))
+    # No console in pythonw mode — send output to a log file for troubleshooting.
+    try:
+        logf = open(os.path.join(base, "marathon.log"), "a", buffering=1, encoding="utf-8")
+        sys.stdout = logf
+        sys.stderr = logf
+    except Exception:
+        pass
+
+    try:
+        import pystray
+    except Exception:
+        print("pystray not installed. Run:  python -m pip install pystray")
+        print("Falling back to console mode.")
+        return run_live(cfg, dry_run)
+
+    stop_event = threading.Event()
+    state = {"icon": None, "count": 0}
+
+    def on_count(n):
+        state["count"] = n
+        ic = state["icon"]
+        if ic is not None:
+            try:
+                ic.title = f"Marathon Kill Recorder — {n} kills"
+            except Exception:
+                pass
+
+    def on_quit(icon, item):
+        stop_event.set()
+        icon.stop()
+
+    menu = pystray.Menu(pystray.MenuItem("Quit", on_quit))
+    icon = pystray.Icon("marathon", _tray_icon_image(base, cfg),
+                        "Marathon Kill Recorder", menu)
+    state["icon"] = icon
+
+    worker = threading.Thread(
+        target=run_live, args=(cfg, dry_run, stop_event, on_count), daemon=True)
+    worker.start()
+    icon.run()               # blocks on the main thread until Quit
+    stop_event.set()
+    worker.join(timeout=10)  # let the end-of-session recap finish
+
+
 def main():
     p = argparse.ArgumentParser(description="Marathon Auto Kill Recorder")
     p.add_argument("--config", default=CONFIG_PATH)
@@ -372,6 +441,8 @@ def main():
                    help="OCR a saved screenshot and report detected kills (no OBS, no loop)")
     p.add_argument("--test-lines", nargs="+", metavar="LINE",
                    help="run detection on literal feed lines (no OCR, no OBS)")
+    p.add_argument("--tray", action="store_true",
+                   help="run from a system-tray skull icon (no console window)")
     args = p.parse_args()
 
     cfg = load_config(args.config)
@@ -380,6 +451,8 @@ def main():
         run_test_lines(cfg, args.test_lines)
     elif args.test_image:
         run_test_image(cfg, args.test_image)
+    elif args.tray:
+        run_tray(cfg, dry_run=args.dry_run)
     else:
         run_live(cfg, dry_run=args.dry_run)
 
