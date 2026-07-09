@@ -92,6 +92,47 @@ def play_kill_sound(cfg: dict) -> None:
     threading.Thread(target=_beep, daemon=True).start()
 
 
+def overlay_label_for(cfg: dict, raw_line: str):
+    """If this kill's text matches a configured overlay phrase, return its label
+    (e.g. 'HEADSHOT' for a precision down), else None."""
+    from rapidfuzz import fuzz
+    from detector import _normalize
+
+    labels = cfg.get("overlay_labels") or {"PRECISION DOWN": "HEADSHOT"}
+    blob = _normalize(raw_line)
+    if not blob:
+        return None
+    for phrase, label in labels.items():
+        p = _normalize(phrase)
+        if p and (p in blob or fuzz.partial_ratio(p, blob) >= 80):
+            return label
+    return None
+
+
+def show_overlay(cfg: dict, label: str) -> None:
+    """Launch overlay.py as its own process (non-blocking) to flash `label`."""
+    if not cfg.get("show_overlays", True):
+        return
+    try:
+        import subprocess
+        import sys
+        base = os.path.dirname(os.path.abspath(__file__))
+        script = os.path.join(base, "overlay.py")
+        if not os.path.exists(script):
+            return
+        # Prefer pythonw.exe so no extra console window flashes.
+        pyw = os.path.join(os.path.dirname(sys.executable), "pythonw.exe")
+        runner = pyw if os.path.exists(pyw) else sys.executable
+        dur = str(cfg.get("overlay_duration_ms", 1400))
+        color = cfg.get("overlay_color", "#ff2b25")
+        subprocess.Popen(
+            [runner, script, label, dur, color],
+            creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
+        )
+    except Exception:
+        pass
+
+
 def log_kill(cfg: dict, event, count: int) -> None:
     path = os.path.join(os.path.dirname(CONFIG_PATH), cfg.get("session_log", "session_log.csv"))
     new_file = not os.path.exists(path)
@@ -206,6 +247,10 @@ def run_live(cfg: dict, dry_run: bool):
                     count += 1
                     print(f"KILL #{count}: {ev.raw_line!r}")
                     play_kill_sound(cfg)
+                    label = overlay_label_for(cfg, ev.raw_line)
+                    if label:
+                        print(f"  -> {label}!")
+                        show_overlay(cfg, label)
                     obs.set_counter(count)
                     log_kill(cfg, ev, count)
                     if now - last_save >= min_save:

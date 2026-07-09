@@ -82,5 +82,13 @@ play_sound: true    # play a short beep each time a kill is detected
 sound_file: ""      # optional path to a .wav to play instead of the beep, e.g.
                     # "C:\\Users\\you\\Downloads\\ding.wav"; empty = built-in beep
 
+# --- On-screen event popups (needs the game in borderless windowed) ---
+show_overlays: true          # flash a callout for special events
+overlay_duration_ms: 1400    # how long the callout stays on screen
+overlay_color: "#ff2b25"     # callout text color
+# When a detected kill's text contains the phrase (left), flash the label (right).
+overlay_labels:
+  "PRECISION DOWN": "HEADSHOT"
+
 # --- Logging ---
 session_log: "session_log.csv"
