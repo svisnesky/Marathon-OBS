@@ -64,22 +64,27 @@ class ControlPanel:
         r.geometry("580x620")
         r.minsize(520, 560)
 
-        # header
+        # header: O emblem + MARATHON wordmark + subtitle
         head = tk.Frame(r, bg=BG)
-        head.pack(fill="x", padx=20, pady=(18, 6))
+        head.pack(fill="x", padx=20, pady=(18, 8))
         try:
-            img = tk.PhotoImage(file=os.path.join(BASE, "marathon_skull.png"))
-            self._icon = img.subsample(max(1, img.height() // 46))
-            tk.Label(head, image=self._icon, bg=BG).pack(side="left", padx=(0, 12))
-            r.iconphoto(True, img)
+            emb = tk.PhotoImage(file=os.path.join(BASE, "marathon_emblem.png"))
+            self._emblem_full = emb  # keep a ref for the window icon
+            self._emblem = emb.subsample(max(1, emb.height() // 44))
+            tk.Label(head, image=self._emblem, bg=BG).pack(side="left", padx=(0, 14))
+            r.iconphoto(True, emb)
         except Exception:
             pass
         title = tk.Frame(head, bg=BG)
         title.pack(side="left", anchor="w")
-        tk.Label(title, text="KILL RECORDER", bg=BG, fg=TEXT,
-                 font=("Segoe UI Black", 18, "bold")).pack(anchor="w")
-        tk.Label(title, text="MARATHON // TAU CETI IV", bg=BG, fg=ACCENT,
-                 font=("Consolas", 9)).pack(anchor="w")
+        try:
+            self._wordmark = tk.PhotoImage(file=os.path.join(BASE, "marathon_wordmark.png"))
+            tk.Label(title, image=self._wordmark, bg=BG).pack(anchor="w")
+        except Exception:
+            tk.Label(title, text="MARATHON", bg=BG, fg=ACCENT,
+                     font=("Segoe UI Black", 18, "bold")).pack(anchor="w")
+        tk.Label(title, text="KILL RECORDER // TAU CETI IV", bg=BG, fg=MUTED,
+                 font=("Consolas", 9)).pack(anchor="w", pady=(3, 0))
 
         # status + count row
         row = tk.Frame(r, bg=BG)
