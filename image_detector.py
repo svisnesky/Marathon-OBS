@@ -36,6 +36,18 @@ class Template:
     scales: list[np.ndarray]  # pre-scaled versions for multi-scale matching
 
 
+def _to_gray(img: np.ndarray) -> np.ndarray:
+    """Convert any image (BGR, BGRA, gray) to single-channel grayscale."""
+    if len(img.shape) == 2:
+        return img
+    ch = img.shape[2]
+    if ch == 4:
+        return cv2.cvtColor(img, cv2.COLOR_BGRA2GRAY)
+    if ch == 3:
+        return cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
+    return img[:, :, 0]
+
+
 TAG_TO_EVENT = {
     "runner_down": "down",
     "finisher": "finisher",
@@ -75,10 +87,7 @@ def load_templates(template_dir: str, scales: tuple[float, ...] = (0.6, 0.75, 0.
         if img is None:
             continue
 
-        if len(img.shape) == 3:
-            gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
-        else:
-            gray = img
+        gray = _to_gray(img)
 
         tag = os.path.splitext(fname)[0]
         event_type = _classify_tag(tag)
@@ -90,7 +99,7 @@ def load_templates(template_dir: str, scales: tuple[float, ...] = (0.6, 0.75, 0.
             scaled.append(cv2.resize(gray, (nw, nh), interpolation=cv2.INTER_AREA if s < 1 else cv2.INTER_LINEAR))
 
         templates.append(Template(tag=tag, image=gray, event_type=event_type, scales=scaled))
-        print(f"  [template] loaded {tag!r} ({gray.shape[1]}x{gray.shape[0]}) -> {event_type}")
+        print(f"  [template] loaded {tag!r} ({gray.shape[1]}x{gray.shape[0]}) channels={img.shape[2] if len(img.shape)==3 else 1} -> {event_type}")
 
     return templates
 
@@ -121,10 +130,7 @@ class ImageDetector:
 
     def process_frame(self, frame: np.ndarray, now: float) -> list[KillEvent]:
         """Check a BGR frame for any matching templates. Returns KillEvents."""
-        if len(frame.shape) == 3:
-            gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
-        else:
-            gray = frame
+        gray = _to_gray(frame)
 
         events = []
 

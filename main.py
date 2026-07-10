@@ -642,19 +642,31 @@ def _run_live_template(cfg: dict, dry_run: bool, stop_event, on_count):
             sct.close()
 
     logged_size = False
+    null_frames = 0
     try:
         while not (stop_event is not None and stop_event.is_set()):
             loop_start = time.monotonic()
             img = grab_full()
             if img is None:
+                null_frames += 1
+                if null_frames == 10:
+                    print("  [template] WARNING: 10 null frames in a row — virtual cam may not be working")
                 time.sleep(0.1)
                 continue
 
             if not logged_size:
                 h, w = img.shape[:2]
-                print(f"  [template] frame size: {w}x{h}")
+                ch = img.shape[2] if len(img.shape) == 3 else 1
+                print(f"  [template] frame size: {w}x{h} channels={ch}")
                 for t in templates:
-                    print(f"  [template] {t.tag} template: {t.image.shape[1]}x{t.image.shape[0]}")
+                    for i, sc in enumerate(t.scales):
+                        sh, sw = sc.shape[:2]
+                        fits = "OK" if sw <= w and sh <= h else "TOO BIG"
+                        print(f"  [template] {t.tag} scale[{i}]: {sw}x{sh} {fits}")
+                debug_path = os.path.join(base, "debug_frame.png")
+                import cv2 as _cv2
+                _cv2.imwrite(debug_path, img)
+                print(f"  [template] saved first frame to {debug_path}")
                 logged_size = True
 
             events = detector.process_frame(img, now=loop_start)
