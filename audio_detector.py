@@ -62,6 +62,15 @@ def save_wav_mono(path: str, data: np.ndarray, sr: int = 44100) -> None:
         w.writeframes(pcm.tobytes())
 
 
+def _bandpass(data: np.ndarray, sr: int, lo: float = 1500, hi: float = 8000,
+              order: int = 4) -> np.ndarray:
+    """Butterworth bandpass filter. Isolates kill-cue frequencies (mid/high)
+    and strips gunfire rumble + low-frequency gameplay noise."""
+    from scipy.signal import butter, sosfiltfilt
+    sos = butter(order, [lo, hi], btype="band", fs=sr, output="sos")
+    return sosfiltfilt(sos, data).astype(np.float32)
+
+
 def _ncc(buf: np.ndarray, tmpl: np.ndarray) -> np.ndarray:
     """Sliding normalized cross-correlation. Returns scores in roughly [-1, 1]."""
     from scipy.signal import fftconvolve
@@ -135,9 +144,10 @@ class AudioDetector:
         self.templates: dict[str, np.ndarray] = {}
         for tag, path in references.items():
             if path and os.path.isfile(path):
-                self.templates[tag] = load_wav_mono(path, self.sr)
+                raw = load_wav_mono(path, self.sr)
+                self.templates[tag] = _bandpass(raw, self.sr)
                 if self.debug:
-                    dur = len(self.templates[tag]) / self.sr
+                    dur = len(raw) / self.sr
                     print(f"  [audio] loaded {tag!r} reference: {path} ({dur:.2f}s)")
         if not self.templates:
             raise FileNotFoundError(
@@ -210,12 +220,14 @@ class AudioDetector:
 
             if len(self._chunks) < 4:
                 continue
-            buf = np.concatenate(list(self._chunks))
+            raw_buf = np.concatenate(list(self._chunks))
 
             # skip if mostly silent (game not running / muted)
-            rms = float(np.sqrt(np.mean(buf[-self.sr:] ** 2))) if len(buf) >= self.sr else 0
+            rms = float(np.sqrt(np.mean(raw_buf[-self.sr:] ** 2))) if len(raw_buf) >= self.sr else 0
             if rms < 1e-5:
                 continue
+
+            buf = _bandpass(raw_buf, self.sr)
 
             best_tag: str | None = None
             best_score: float = 0.0
