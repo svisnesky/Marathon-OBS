@@ -201,6 +201,18 @@ def test_menu_scrap_not_a_kill():
     assert d.process_frame(["# fi", "FI"], now=1.0) is None
 
 
+def test_confirm_frames_rejects_single_frame_noise():
+    d = PopupDetector(trigger_phrases=["RUNNER DOWN"], absence_frames=2, confirm_frames=2)
+    # a one-frame fluke that matches then vanishes -> not counted
+    assert d.process_frame(["RUNNER DOWN +15 XP"], now=1.0) is None
+    assert d.process_frame([], now=1.2) is None
+    assert d.process_frame([], now=1.4) is None
+    # a real popup persisting 2 frames -> counts once on the 2nd
+    assert d.process_frame(["RUNNER DOWN +15 XP"], now=2.0) is None
+    assert d.process_frame(["RUNNER DOWN +15 XP"], now=2.2) is not None
+    assert d.process_frame(["RUNNER DOWN +15 XP"], now=2.4) is None
+
+
 if __name__ == "__main__":
     import traceback
 

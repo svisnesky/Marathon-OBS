@@ -188,13 +188,16 @@ class PopupDetector:
         phrase_match_threshold: int = 80,
         absence_frames: int = 2,
         require_xp_reward: bool = False,
+        confirm_frames: int = 1,
     ):
         self.phrases = [_normalize(p) for p in (trigger_phrases or ["runner down"]) if p.strip()]
         self.threshold = phrase_match_threshold
         self.absence_frames = max(1, absence_frames)
+        self.confirm_frames = max(1, confirm_frames)
         self.require_xp_reward = require_xp_reward
-        self._present = False
-        self._absent_count = absence_frames  # start armed (as if long absent)
+        self._streak = 0        # consecutive matched frames
+        self._fired = False     # already counted this appearance
+        self._absent_count = absence_frames
 
     def _xp_reward_present(self, blob: str) -> bool:
         # matches "+15 xp", "15xp", "+ 15 xp" after normalization strips '+'
@@ -216,10 +219,12 @@ class PopupDetector:
         matched = self._matches(lines)
 
         if matched is not None:
-            rising_edge = not self._present
-            self._present = True
+            self._streak += 1
             self._absent_count = 0
-            if rising_edge:
+            # only count once the popup has persisted enough frames (real popups
+            # linger; single-frame OCR noise is rejected)
+            if self._streak >= self.confirm_frames and not self._fired:
+                self._fired = True
                 return KillEvent(
                     timestamp=now,
                     raw_line=" ".join(lines).strip(),
@@ -232,5 +237,6 @@ class PopupDetector:
         # no match this frame
         self._absent_count += 1
         if self._absent_count >= self.absence_frames:
-            self._present = False
+            self._streak = 0
+            self._fired = False
         return None
