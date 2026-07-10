@@ -392,7 +392,7 @@ def run_live(cfg: dict, dry_run: bool = False, stop_event=None, on_count=None):
         except Exception as e:
             print(f"(web dashboard off: {e})")
 
-    region = cfg.get("detect_region") or cfg.get("feed_region")
+    region = cfg.get("detect_region_frac") or cfg.get("detect_region") or cfg.get("feed_region")
     print(f"Detecting [{mode}] at {poll_fps} fps via {cfg.get('capture_source')}. "
           f"Region={region}. "
           f"{'DRY-RUN' if dry_run else 'LIVE'}. Ctrl-C to stop.\n")

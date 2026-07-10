@@ -20,6 +20,16 @@ from __future__ import annotations
 import numpy as np
 
 
+def _resolve(region, region_frac, W, H) -> dict:
+    """Return a pixel {x,y,w,h}. If region_frac (fractions 0-1) is given, it wins
+    and is computed against the frame WxH (resolution-independent)."""
+    if region_frac:
+        return {"x": int(region_frac["x"] * W), "y": int(region_frac["y"] * H),
+                "w": int(region_frac["w"] * W), "h": int(region_frac["h"] * H)}
+    return {"x": int(region["x"]), "y": int(region["y"]),
+            "w": int(region["w"]), "h": int(region["h"])}
+
+
 def _crop(frame: np.ndarray, region: dict) -> np.ndarray:
     x, y = int(region["x"]), int(region["y"])
     w, h = int(region["w"]), int(region["h"])
@@ -29,12 +39,9 @@ def _crop(frame: np.ndarray, region: dict) -> np.ndarray:
 class RegionCapture:
     """Screen-capture source (mss)."""
 
-    def __init__(self, region: dict, monitor_index: int = 1):
-        """region: {x, y, w, h} in pixels on the chosen monitor.
-
-        monitor_index 1 == primary monitor in mss (0 == the virtual "all monitors").
-        """
+    def __init__(self, region: dict, monitor_index: int = 1, region_frac=None):
         self.region = region
+        self.region_frac = region_frac
         self.monitor_index = monitor_index
         self._sct = None
         self._bbox = None
@@ -45,11 +52,12 @@ class RegionCapture:
         self._sct = mss.mss()
         mons = self._sct.monitors
         base = mons[self.monitor_index] if self.monitor_index < len(mons) else mons[0]
+        r = _resolve(self.region, self.region_frac, base["width"], base["height"])
         self._bbox = {
-            "left": base["left"] + int(self.region["x"]),
-            "top": base["top"] + int(self.region["y"]),
-            "width": int(self.region["w"]),
-            "height": int(self.region["h"]),
+            "left": base["left"] + r["x"],
+            "top": base["top"] + r["y"],
+            "width": r["w"],
+            "height": r["h"],
         }
         return self
 
@@ -68,8 +76,9 @@ class VirtualCamCapture:
     """OBS Virtual Camera source (cv2.VideoCapture). Lower anti-cheat exposure:
     OBS captures the game; we only read OBS's webcam-style output device."""
 
-    def __init__(self, region: dict, cam_index: int = 0):
+    def __init__(self, region: dict, cam_index: int = 0, region_frac=None):
         self.region = region
+        self.region_frac = region_frac
         self.cam_index = cam_index
         self._cap = None
 
@@ -95,17 +104,19 @@ class VirtualCamCapture:
         ok, frame = self._cap.read()      # BGR already
         if not ok or frame is None:
             raise RuntimeError("Failed to read a frame from OBS Virtual Camera.")
-        return _crop(frame, self.region)
+        h, w = frame.shape[:2]
+        return _crop(frame, _resolve(self.region, self.region_frac, w, h))
 
 
 def make_capture(cfg: dict):
     """Factory: build the capture source named in config."""
     src = cfg.get("capture_source", "obs_virtualcam")
-    region = cfg.get("detect_region") or cfg["feed_region"]  # feed_region = legacy name
+    region = cfg.get("detect_region") or cfg.get("feed_region")  # feed_region = legacy
+    frac = cfg.get("detect_region_frac")  # fractions of the frame; wins if present
     if src == "screen":
-        return RegionCapture(region, monitor_index=cfg.get("monitor_index", 1))
+        return RegionCapture(region, monitor_index=cfg.get("monitor_index", 1), region_frac=frac)
     if src == "obs_virtualcam":
-        return VirtualCamCapture(region, cam_index=cfg.get("obs_virtualcam_index", 0))
+        return VirtualCamCapture(region, cam_index=cfg.get("obs_virtualcam_index", 0), region_frac=frac)
     raise ValueError(f"Unknown capture_source: {src!r} (use 'obs_virtualcam' or 'screen')")
 
 

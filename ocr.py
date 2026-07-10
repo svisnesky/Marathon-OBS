@@ -12,17 +12,19 @@ import cv2
 import numpy as np
 
 
-def preprocess(img_bgr: np.ndarray, upscale: int = 3) -> np.ndarray:
-    """Upscale + grayscale + adaptive threshold to make small feed text OCR-able."""
+def preprocess(img_bgr: np.ndarray, upscale: int = 3, binarize: bool = True) -> np.ndarray:
+    """Upscale + grayscale, optionally hard-thresholded to a bilevel image.
+
+    Otsu binarization helps Tesseract, but tends to HURT the neural OCR
+    (EasyOCR) on busy/varied backgrounds — there, feed the upscaled grayscale."""
     if upscale and upscale > 1:
         img_bgr = cv2.resize(
             img_bgr, None, fx=upscale, fy=upscale, interpolation=cv2.INTER_CUBIC
         )
     gray = cv2.cvtColor(img_bgr, cv2.COLOR_BGR2GRAY)
-    # Kill-feed text is usually light on a dark, semi-transparent background.
-    # Otsu threshold gives a clean bilevel image for OCR.
+    if not binarize:
+        return gray
     _, thresh = cv2.threshold(gray, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
-    # If the region came out mostly white, invert so text is dark-on-light.
     if thresh.mean() > 127:
         thresh = cv2.bitwise_not(thresh)
     return thresh
@@ -54,15 +56,16 @@ class OCREngine:
 
     def read_lines(self, img_bgr: np.ndarray) -> List[str]:
         self._ensure_loaded()
-        proc = preprocess(img_bgr, self.upscale)
 
         if self.engine_name == "easyocr":
-            # detail=0 -> list of strings, one per detected text box.
+            # neural OCR does better on grayscale than a hard-thresholded image
+            proc = preprocess(img_bgr, self.upscale, binarize=False)
             results = self._reader.readtext(proc, detail=0, paragraph=True)
             return [r for r in results if r and r.strip()]
 
-        # tesseract
+        # tesseract needs a clean bilevel image
         import pytesseract
 
+        proc = preprocess(img_bgr, self.upscale, binarize=True)
         text = pytesseract.image_to_string(proc)
         return [ln.strip() for ln in text.splitlines() if ln.strip()]

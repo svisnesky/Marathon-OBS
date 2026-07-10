@@ -56,10 +56,17 @@ capture_source: "obs_virtualcam"
 obs_virtualcam_index: 0     # which webcam device is the OBS Virtual Camera (try 0,1,2)
 monitor_index: 1            # only used when capture_source: screen (1 = primary)
 
-# --- Region of the frame to OCR (set by calibrate.py) ---
-# In popup mode: the box around the center "RUNNER DOWN +XP" popup.
-# In killfeed mode: the box around the kill feed.
-# Calibrate against the SAME capture_source you'll run with.
+# --- Region of the frame to OCR ---
+# detect_region_frac (fractions 0-1 of the frame) is resolution-independent and
+# WINS over detect_region. Set to where the RUNNER DOWN / FINISHER / RUNNER ELIM
+# reward popups appear (center-lower). These values are measured from a 4K frame.
+detect_region_frac:
+  x: 0.375
+  y: 0.71
+  w: 0.19
+  h: 0.12
+
+# Legacy pixel region (used only if detect_region_frac is removed).
 detect_region:
   x: 780
   y: 760
