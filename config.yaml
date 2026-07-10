@@ -30,9 +30,10 @@ popup_absence_frames: 2      # popup must vanish this many frames before it can 
 suppress_phrases:
   - "SELF REVIVE"
   - "GIVE UP"
-# require_xp_reward: only fire if a "+NN XP" reward is also visible in the region.
-# Guards against non-combat popups, but set false if it causes missed kills.
-require_xp_reward: false
+# require_reward: only count a kill when a reward ("+15 XP", "+50", "+10 XP") is
+# also on screen. This is the main filter against loading/menu-screen false
+# positives (that text has no reward). Set false only if it misses real kills.
+require_reward: true
 
 # --- KILLFEED MODE settings (only used when detection_mode: killfeed) ---
 player_name: "MRVIZNASTY"    # your exact in-game display name

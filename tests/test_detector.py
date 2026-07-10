@@ -119,6 +119,7 @@ def test_process_lines_batch():
 # --- PopupDetector tests -----------------------------------------------------
 
 def popup(**kw):
+    kw.setdefault("require_reward", False)  # these tests exercise frame/dedup logic
     return PopupDetector(
         trigger_phrases=["RUNNER DOWN"],
         phrase_match_threshold=80,
@@ -173,14 +174,22 @@ def test_popup_ocr_garbled_phrase_still_fires():
     assert ev is not None
 
 
-def test_popup_require_xp_reward():
-    p = popup(require_xp_reward=True)
-    # phrase present but no XP -> objective/other popup, ignored
-    assert p.process_frame(["RUNNER DOWN"], now=1.0) is None
-    # phrase + XP reward -> fires
-    assert p.process_frame([], now=1.2) is None
-    assert p.process_frame([], now=1.4) is None
-    assert p.process_frame(["RUNNER DOWN +15 XP"], now=2.0) is not None
+def test_require_reward_blocks_no_reward_text():
+    # loading/menu text: phrase-ish but no reward -> never counts
+    p = PopupDetector(trigger_phrases=["RUNNER DOWN"], absence_frames=2,
+                      confirm_frames=1, require_reward=True)
+    assert p.process_frame(["RUNNER DOWN"], now=1.0) is None      # no +XP
+    assert p.process_frame(["RUNNER DOWN"], now=1.2) is None
+
+
+def test_require_reward_allows_real_popup():
+    p = PopupDetector(trigger_phrases=["RUNNER DOWN"], absence_frames=2,
+                      confirm_frames=1, require_reward=True)
+    assert p.process_frame(["RUNNER DOWN +15 XP"], now=1.0) is not None
+    # finisher-style "+50" (no XP) also passes
+    f = PopupDetector(trigger_phrases=["FINISHER"], absence_frames=2,
+                      confirm_frames=1, require_reward=True)
+    assert f.process_frame(["FINISHER +50"], now=1.0) is not None
 
 
 def test_short_scrap_does_not_match_long_phrase():

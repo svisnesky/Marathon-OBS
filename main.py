@@ -45,8 +45,8 @@ def build_detector(cfg: dict):
             trigger_phrases=cfg.get("popup_trigger_phrases", ["RUNNER DOWN"]),
             phrase_match_threshold=cfg.get("popup_match_threshold", 80),
             absence_frames=cfg.get("popup_absence_frames", 2),
-            require_xp_reward=cfg.get("require_xp_reward", False),
             confirm_frames=cfg.get("popup_confirm_frames", 2),
+            require_reward=cfg.get("require_reward", True),
         )
     elif mode == "killfeed":
         det = KillDetector(
@@ -361,6 +361,7 @@ def run_live(cfg: dict, dry_run: bool = False, stop_event=None, on_count=None):
             phrase_match_threshold=cfg.get("popup_match_threshold", 80),
             absence_frames=cfg.get("popup_absence_frames", 2),
             confirm_frames=cfg.get("popup_confirm_frames", 2),
+            require_reward=cfg.get("require_reward", True),
         )
 
     # session tracking (for clip organizing + end-of-session recap)

@@ -50,7 +50,7 @@ def phrase_matches(phrase_norm: str, blob_norm: str, threshold: int = 80) -> boo
         return False
     if phrase_norm in blob_norm:
         return True
-    if len(blob_norm) < 0.6 * len(phrase_norm):
+    if len(blob_norm) < max(5, 0.6 * len(phrase_norm)):
         return False
     return fuzz.partial_ratio(phrase_norm, blob_norm) >= threshold
 
@@ -189,25 +189,26 @@ class PopupDetector:
         absence_frames: int = 2,
         require_xp_reward: bool = False,
         confirm_frames: int = 1,
+        require_reward: bool = True,
     ):
         self.phrases = [_normalize(p) for p in (trigger_phrases or ["runner down"]) if p.strip()]
         self.threshold = phrase_match_threshold
         self.absence_frames = max(1, absence_frames)
         self.confirm_frames = max(1, confirm_frames)
-        self.require_xp_reward = require_xp_reward
+        self.require_reward = require_reward
         self._streak = 0        # consecutive matched frames
         self._fired = False     # already counted this appearance
         self._absent_count = absence_frames
 
-    def _xp_reward_present(self, blob: str) -> bool:
-        # matches "+15 xp", "15xp", "+ 15 xp" after normalization strips '+'
-        return re.search(r"\b\d{1,4}\s?xp\b", blob) is not None
+    def _reward_present(self, raw: str) -> bool:
+        """Real kill popups show a reward: '+15 XP', '+50', '+10 XP'. Loading /
+        menu text does not. Checked on the RAW text (before '+' is stripped)."""
+        t = raw.lower()
+        return ("xp" in t) or (re.search(r"\+\s*\d", t) is not None)
 
     def _matches(self, lines: Iterable[str]) -> Optional[str]:
         blob = _normalize(" ".join(lines))
         if not blob:
-            return None
-        if self.require_xp_reward and not self._xp_reward_present(blob):
             return None
         for ph in self.phrases:
             if phrase_matches(ph, blob, self.threshold):
@@ -217,6 +218,8 @@ class PopupDetector:
     def process_frame(self, lines: Iterable[str], now: float) -> Optional[KillEvent]:
         lines = list(lines)
         matched = self._matches(lines)
+        if matched is not None and self.require_reward and not self._reward_present(" ".join(lines)):
+            matched = None  # phrase present but no reward on screen -> not a kill
 
         if matched is not None:
             self._streak += 1
