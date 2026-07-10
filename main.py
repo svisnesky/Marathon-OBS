@@ -351,6 +351,7 @@ def run_live(cfg: dict, dry_run: bool = False, stop_event=None, on_count=None):
     interval = 1.0 / poll_fps
     min_save = cfg.get("min_save_interval_seconds", 2.0)
     last_save = 0.0
+    debug_ocr = cfg.get("debug_ocr", False)  # print every OCR read for diagnosis
 
     # independent watcher for the skull overlay, so a precision down still fires
     # the skull even when it follows a normal down in the same popup window.
@@ -403,6 +404,8 @@ def run_live(cfg: dict, dry_run: bool = False, stop_event=None, on_count=None):
                 loop_start = time.monotonic()
                 img = cap.grab()
                 lines = engine.read_lines(img)
+                if debug_ocr and lines:
+                    print(f"  [ocr] {' | '.join(lines)}")
                 blocked = is_suppressed(cfg, lines)  # downed / give-up screen
                 events = [] if blocked else detect_events(det, mode, lines, now=loop_start)
 
