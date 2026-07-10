@@ -63,8 +63,10 @@ detect_region:
   w: 460
   h: 110
 
-# --- Timing ---
-poll_fps: 6                 # frames/sec to capture + OCR
+# --- Timing / performance ---
+poll_fps: 3                 # frames/sec to capture + OCR. Lower = less CPU / better
+                            # game FPS. 3 is plenty (the popup lingers ~2s).
+ocr_threads: 2              # max CPU threads OCR may use (leaves cores for the game)
 dedup_ttl_seconds: 8.0      # killfeed mode: remember a matched line this long
 min_save_interval_seconds: 2.0  # floor between OBS replay saves (avoid clip spam)
 

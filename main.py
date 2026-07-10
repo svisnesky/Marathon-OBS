@@ -300,11 +300,37 @@ def run_test_image(cfg: dict, image_path: str):
 
 # --- live loop ---------------------------------------------------------------
 
+def _tune_performance(cfg):
+    """Keep OCR from starving the game of CPU (the usual cause of frame drops):
+    run this process at below-normal priority and cap how many CPU threads the
+    OCR/torch/opencv work can use."""
+    n = max(1, int(cfg.get("ocr_threads", 2)))
+    try:
+        import ctypes
+        BELOW_NORMAL_PRIORITY_CLASS = 0x00004000
+        k = ctypes.windll.kernel32
+        k.SetPriorityClass(k.GetCurrentProcess(), BELOW_NORMAL_PRIORITY_CLASS)
+    except Exception:
+        pass
+    os.environ.setdefault("OMP_NUM_THREADS", str(n))
+    try:
+        import torch
+        torch.set_num_threads(n)
+    except Exception:
+        pass
+    try:
+        import cv2
+        cv2.setNumThreads(n)
+    except Exception:
+        pass
+
+
 def run_live(cfg: dict, dry_run: bool = False, stop_event=None, on_count=None):
     from capture import make_capture
     from ocr import OCREngine
     from obs_client import OBSClient, DryRunOBS
 
+    _tune_performance(cfg)
     det, mode = build_detector(cfg)
     engine = OCREngine(cfg.get("ocr_engine", "easyocr"), cfg.get("ocr_upscale", 3))
 
