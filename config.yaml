@@ -126,5 +126,22 @@ ffmpeg_path: ""        # leave empty to auto-find ffmpeg.exe in this folder / PA
 web_dashboard: true    # serve a live kill feed page
 web_port: 8000         # open http://<your-PC-IP>:8000 on the device
 
+# =========================================================================
+# AUDIO MODE settings (only used when detection_mode: audio)
+#   Listens to your game audio via WASAPI loopback and matches kill sound
+#   effects. No screen capture, no OCR, no resolution dependency.
+#   Run  python audio_calibrate.py  first to record reference sounds.
+# =========================================================================
+audio:
+  threshold: 0.40       # 0-1 correlation score to count as a match (lower = more sensitive)
+  cooldown: 2.0         # seconds between detections (same as min_save_interval)
+  buffer_seconds: 3.0   # rolling audio buffer length
+  check_interval: 0.15  # seconds between match checks (lower = more responsive, more CPU)
+  sample_rate: 44100
+  device_name: ""       # leave empty for default speakers; set to match a specific device name
+
+# Set true to print audio match scores every check (like debug_ocr but for audio)
+debug_audio: false
+
 # --- Logging ---
 session_log: "session_log.csv"

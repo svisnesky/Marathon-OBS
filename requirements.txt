@@ -14,6 +14,10 @@ easyocr>=1.7
 #   (Windows: https://github.com/UB-Mannheim/tesseract/wiki)
 pytesseract>=0.3.10
 
+# Audio-based detection (WASAPI loopback capture + template matching)
+SoundCard>=0.4          # WASAPI loopback audio capture (reads what your speakers play)
+scipy>=1.10             # normalized cross-correlation for sound matching
+
 # OBS control (obs-websocket v5)
 obsws-python>=1.6
 

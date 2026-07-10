@@ -38,7 +38,7 @@ def load_config(path=CONFIG_PATH) -> dict:
 
 
 def build_detector(cfg: dict):
-    """Return (detector, mode). mode is 'popup' or 'killfeed'."""
+    """Return (detector, mode). mode is 'popup', 'killfeed', or 'audio'."""
     mode = cfg.get("detection_mode", "popup")
     if mode == "popup":
         det = PopupDetector(
@@ -57,8 +57,11 @@ def build_detector(cfg: dict):
             name_match_threshold=cfg.get("name_match_threshold", 82),
             dedup_ttl_seconds=cfg.get("dedup_ttl_seconds", 8.0),
         )
+    elif mode == "audio":
+        return None, "audio"  # AudioDetector is built separately in run_live
     else:
-        raise ValueError(f"Unknown detection_mode: {mode!r} (use 'popup' or 'killfeed')")
+        raise ValueError(f"Unknown detection_mode: {mode!r} "
+                         "(use 'popup', 'killfeed', or 'audio')")
     return det, mode
 
 
@@ -321,14 +324,10 @@ def _tune_performance(cfg):
         pass
 
 
-def run_live(cfg: dict, dry_run: bool = False, stop_event=None, on_count=None):
-    from capture import make_capture
-    from ocr import OCREngine
+def _setup_session(cfg, dry_run):
+    """Common session setup shared by OCR and audio run modes. Returns a dict
+    of session state (obs, web, counters, etc.)."""
     from obs_client import OBSClient, DryRunOBS
-
-    _tune_performance(cfg)
-    det, mode = build_detector(cfg)
-    engine = OCREngine(cfg.get("ocr_engine", "easyocr"), cfg.get("ocr_upscale", 3))
 
     obs_cfg = cfg.get("obs", {})
     if dry_run:
@@ -343,38 +342,8 @@ def run_live(cfg: dict, dry_run: bool = False, stop_event=None, on_count=None):
             auto_start_replay_buffer=obs_cfg.get("auto_start_replay_buffer", True),
         )
     obs.connect()
+    obs.set_counter(0)
 
-    count = 0
-    obs.set_counter(count)
-
-    poll_fps = max(1, cfg.get("poll_fps", 5))
-    interval = 1.0 / poll_fps
-    min_save = cfg.get("min_save_interval_seconds", 2.0)
-    last_save = 0.0
-    debug_ocr = cfg.get("debug_ocr", False)  # print every OCR read for diagnosis
-
-    # independent watcher for the skull overlay, so a precision down still fires
-    # the skull even when it follows a normal down in the same popup window.
-    overlay_det = None
-    if cfg.get("show_overlays", True) and mode == "popup":
-        overlay_det = PopupDetector(
-            trigger_phrases=cfg.get("overlay_events") or ["PRECISION DOWN"],
-            phrase_match_threshold=cfg.get("popup_match_threshold", 80),
-            absence_frames=cfg.get("popup_absence_frames", 2),
-            confirm_frames=cfg.get("popup_confirm_frames", 2),
-            require_reward=cfg.get("require_reward", True),
-        )
-
-    # session tracking (for clip organizing + end-of-session recap)
-    organize = cfg.get("organize_clips", True) and not dry_run
-    session_id = time.strftime("%Y-%m-%d_%H-%M-%S")
-    session_start_wall = time.strftime("%H:%M")
-    session_start = time.monotonic()
-    session_tags = []
-
-    # live web dashboard (view on a phone/iPad browser over the LAN).
-    # The server is started once per process and reused, so restarting a session
-    # keeps the same URL and always shows the current session.
     web = None
     if cfg.get("web_dashboard", True):
         try:
@@ -386,12 +355,93 @@ def run_live(cfg: dict, dry_run: bool = False, stop_event=None, on_count=None):
                 _web_state = webserver.LiveState()
                 _web_server = webserver.start_web(_web_state, port, base)
             web = _web_state
-            web.reset()            # fresh counts/feed for this session
+            web.reset()
             web.set_running(True)
             print(f"Live view: http://{webserver.local_ip()}:{port}  "
                   f"(open in your iPad/phone browser on the same Wi-Fi)")
         except Exception as e:
             print(f"(web dashboard off: {e})")
+
+    return {
+        "obs": obs,
+        "web": web,
+        "count": 0,
+        "last_save": 0.0,
+        "organize": cfg.get("organize_clips", True) and not dry_run,
+        "session_id": time.strftime("%Y-%m-%d_%H-%M-%S"),
+        "session_start_wall": time.strftime("%H:%M"),
+        "session_start": time.monotonic(),
+        "session_tags": [],
+        "min_save": cfg.get("min_save_interval_seconds", 2.0),
+    }
+
+
+def _handle_kill(cfg, ev, s, on_count=None):
+    """Process a single detected kill event. Mutates the session dict `s`."""
+    now = time.monotonic()
+    s["count"] += 1
+    count = s["count"]
+    tag = classify_event(ev.raw_line)
+    s["session_tags"].append(tag)
+    print(f"KILL #{count} [{tag}]: {ev.raw_line!r}")
+    play_kill_sound(cfg)
+    s["obs"].set_counter(count)
+    if on_count is not None:
+        on_count(count)
+    if s["web"] is not None:
+        s["web"].record(count, tag, ev.raw_line)
+    log_kill(cfg, ev, count)
+    if now - s["last_save"] >= s["min_save"]:
+        if s["obs"].save_replay():
+            s["last_save"] = now
+            if s["organize"]:
+                rename_clip_async(s["obs"], s["session_id"], tag, count)
+    else:
+        print("  (skipped replay save — within min_save_interval)")
+
+    if should_overlay(cfg, ev.raw_line):
+        print("  -> HEADSHOT (skull popup)")
+        show_overlay(cfg)
+
+
+def _classify_audio_event(tag: str) -> str:
+    """Map an audio reference tag to the standard event classification."""
+    tag = tag.lower()
+    if "precision" in tag:
+        return "precision"
+    if "finisher" in tag:
+        return "finisher"
+    if "assist" in tag:
+        return "assist"
+    return "kill"
+
+
+def run_live(cfg: dict, dry_run: bool = False, stop_event=None, on_count=None):
+    det, mode = build_detector(cfg)
+
+    if mode == "audio":
+        return _run_live_audio(cfg, dry_run, stop_event, on_count)
+
+    from capture import make_capture
+    from ocr import OCREngine
+
+    _tune_performance(cfg)
+    engine = OCREngine(cfg.get("ocr_engine", "easyocr"), cfg.get("ocr_upscale", 3))
+    s = _setup_session(cfg, dry_run)
+
+    poll_fps = max(1, cfg.get("poll_fps", 5))
+    interval = 1.0 / poll_fps
+    debug_ocr = cfg.get("debug_ocr", False)
+
+    overlay_det = None
+    if cfg.get("show_overlays", True) and mode == "popup":
+        overlay_det = PopupDetector(
+            trigger_phrases=cfg.get("overlay_events") or ["PRECISION DOWN"],
+            phrase_match_threshold=cfg.get("popup_match_threshold", 80),
+            absence_frames=cfg.get("popup_absence_frames", 2),
+            confirm_frames=cfg.get("popup_confirm_frames", 2),
+            require_reward=cfg.get("require_reward", True),
+        )
 
     region = cfg.get("detect_region_frac") or cfg.get("detect_region") or cfg.get("feed_region")
     print(f"Detecting [{mode}] at {poll_fps} fps via {cfg.get('capture_source')}. "
@@ -406,48 +456,92 @@ def run_live(cfg: dict, dry_run: bool = False, stop_event=None, on_count=None):
                 lines = engine.read_lines(img)
                 if debug_ocr and lines:
                     print(f"  [ocr] {' | '.join(lines)}")
-                blocked = is_suppressed(cfg, lines)  # downed / give-up screen
+                blocked = is_suppressed(cfg, lines)
                 events = [] if blocked else detect_events(det, mode, lines, now=loop_start)
 
                 for ev in events:
-                    now = time.monotonic()
-                    count += 1
-                    tag = classify_event(ev.raw_line)
-                    session_tags.append(tag)
-                    print(f"KILL #{count} [{tag}]: {ev.raw_line!r}")
-                    play_kill_sound(cfg)
-                    obs.set_counter(count)
-                    if on_count is not None:
-                        on_count(count)
-                    if web is not None:
-                        web.record(count, tag, ev.raw_line)
-                    log_kill(cfg, ev, count)
-                    if now - last_save >= min_save:
-                        if obs.save_replay():
-                            last_save = now
-                            if organize:
-                                rename_clip_async(obs, session_id, tag, count)
-                    else:
-                        print("  (skipped replay save — within min_save_interval)")
+                    _handle_kill(cfg, ev, s, on_count)
 
-                # skull overlay: independent per-frame check for precision downs
                 if overlay_det is not None and not blocked:
                     oev = overlay_det.process_frame(lines, now=loop_start)
                     if oev:
                         print("  -> HEADSHOT (skull popup)")
                         show_overlay(cfg)
 
-                # pace the loop
                 elapsed = time.monotonic() - loop_start
                 if elapsed < interval:
                     time.sleep(interval - elapsed)
         except KeyboardInterrupt:
             pass
 
-    if web is not None:
-        web.set_running(False)
-    _end_session(cfg, session_tags, session_start, session_start_wall, dry_run,
-                 obs, session_id)
+    if s["web"] is not None:
+        s["web"].set_running(False)
+    _end_session(cfg, s["session_tags"], s["session_start"],
+                 s["session_start_wall"], dry_run, s["obs"], s["session_id"])
+
+
+def _run_live_audio(cfg: dict, dry_run: bool, stop_event, on_count):
+    """Audio-based detection loop. No screen capture or OCR — listens to game
+    audio via WASAPI loopback and matches kill sound effects."""
+    from audio_detector import AudioDetector
+
+    s = _setup_session(cfg, dry_run)
+
+    base = os.path.dirname(os.path.abspath(__file__))
+    sounds_dir = os.path.join(base, "sounds")
+    audio_cfg = cfg.get("audio", {})
+
+    # build reference map: check for per-type sounds, fall back to a single kill.wav
+    refs: dict[str, str] = {}
+    for tag in ("kill", "precision", "finisher", "assist"):
+        p = audio_cfg.get(f"{tag}_reference", os.path.join(sounds_dir, f"{tag}.wav"))
+        if os.path.isfile(p):
+            refs[tag] = p
+    if not refs:
+        print("ERROR: No reference sound files found in sounds/ folder.")
+        print("Run  python audio_calibrate.py  first to record the kill sound.")
+        return
+
+    debug = cfg.get("debug_audio", False)
+    detector = AudioDetector(
+        references=refs,
+        sample_rate=int(audio_cfg.get("sample_rate", 44100)),
+        threshold=float(audio_cfg.get("threshold", 0.40)),
+        cooldown=float(audio_cfg.get("cooldown", 2.0)),
+        buffer_seconds=float(audio_cfg.get("buffer_seconds", 3.0)),
+        check_interval=float(audio_cfg.get("check_interval", 0.15)),
+        device_name=audio_cfg.get("device_name", ""),
+        debug=debug,
+    )
+    detector.start()
+
+    print(f"Detecting [audio] via WASAPI loopback. "
+          f"References: {list(refs.keys())}. "
+          f"{'DRY-RUN' if dry_run else 'LIVE'}. Ctrl-C to stop.\n")
+
+    try:
+        while not (stop_event is not None and stop_event.is_set()):
+            events = detector.poll()
+            for ev in events:
+                # override classify_event for audio: use the tag from the reference name
+                tag = ev.raw_line.split(":")[1].split()[0] if ":" in ev.raw_line else "kill"
+                ev_tag = _classify_audio_event(tag)
+                # temporarily patch raw_line so classify_event returns the right tag
+                original_raw = ev.raw_line
+                ev.raw_line = {"kill": "RUNNER DOWN", "precision": "PRECISION DOWN",
+                               "finisher": "FINISHER", "assist": "RUNNER ELIM"
+                               }.get(ev_tag, "RUNNER DOWN") + f"  ({original_raw})"
+                _handle_kill(cfg, ev, s, on_count)
+            time.sleep(0.1)
+    except KeyboardInterrupt:
+        pass
+    finally:
+        detector.stop()
+
+    if s["web"] is not None:
+        s["web"].set_running(False)
+    _end_session(cfg, s["session_tags"], s["session_start"],
+                 s["session_start_wall"], dry_run, s["obs"], s["session_id"])
 
 
 def _end_session(cfg, tags, start_monotonic, start_wall, dry_run, obs=None, session_id=None):
