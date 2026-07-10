@@ -23,6 +23,12 @@ class LiveState:
         self._mono = None
         self.events = deque(maxlen=30)
 
+    def reset(self):
+        """Clear counts/feed for a fresh session (server stays up)."""
+        with self._lock:
+            self.count = 0
+            self.events.clear()
+
     def set_running(self, running):
         with self._lock:
             self.running = running

@@ -26,6 +26,11 @@ from detector import KillDetector, PopupDetector
 
 CONFIG_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "config.yaml")
 
+# One web server per process, reused across sessions (so restarting a session
+# doesn't collide on the port and leave the browser on stale data).
+_web_state = None
+_web_server = None
+
 
 def load_config(path=CONFIG_PATH) -> dict:
     with open(path) as f:
@@ -342,15 +347,21 @@ def run_live(cfg: dict, dry_run: bool = False, stop_event=None, on_count=None):
     session_start = time.monotonic()
     session_tags = []
 
-    # live web dashboard (view on a phone/iPad browser over the LAN)
+    # live web dashboard (view on a phone/iPad browser over the LAN).
+    # The server is started once per process and reused, so restarting a session
+    # keeps the same URL and always shows the current session.
     web = None
     if cfg.get("web_dashboard", True):
         try:
             import webserver
+            global _web_state, _web_server
             base = os.path.dirname(os.path.abspath(__file__))
-            web = webserver.LiveState()
             port = cfg.get("web_port", 8000)
-            webserver.start_web(web, port, base)
+            if _web_server is None:
+                _web_state = webserver.LiveState()
+                _web_server = webserver.start_web(_web_state, port, base)
+            web = _web_state
+            web.reset()            # fresh counts/feed for this session
             web.set_running(True)
             print(f"Live view: http://{webserver.local_ip()}:{port}  "
                   f"(open in your iPad/phone browser on the same Wi-Fi)")
@@ -446,6 +457,18 @@ def _end_session(cfg, tags, start_monotonic, start_wall, dry_run, obs=None, sess
             pass
     except Exception as e:
         print(f"(could not write recap: {e})")
+
+    # Shareable match-card image
+    if cfg.get("make_card", True):
+        try:
+            import matchcard
+            base = os.path.dirname(os.path.abspath(__file__))
+            card = os.path.join(base, "stats", "cards", f"card_{session_id or 'session'}.png")
+            p = matchcard.build_card(session, card, os.path.join(base, "marathon_wordmark.png"))
+            if p:
+                print(f"Match card: {p}")
+        except Exception as e:
+            print(f"(card error: {e})")
 
     # Highlight montage of this session's clips (needs ffmpeg + organized clips).
     if cfg.get("make_montage", True) and obs is not None and session_id:
