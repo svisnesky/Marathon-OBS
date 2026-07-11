@@ -631,6 +631,7 @@ def _run_live_template(cfg: dict, dry_run: bool, stop_event, on_count):
             cap.release()
     else:
         import mss
+        import numpy as np
         sct = mss.mss()
         mons = sct.monitors
         mi = cfg.get("monitor_index", 1)
