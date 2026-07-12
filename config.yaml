@@ -10,7 +10,7 @@
 #               your name. Only useful if the feed uses a real word (Marathon's
 #               feed uses icons, so popup mode is preferred).
 # =========================================================================
-detection_mode: "template"
+detection_mode: "popup"
 
 # --- POPUP MODE settings ---
 # Phrases that mean "you got a down/kill/assist". Case-insensitive, fuzzy-matched
