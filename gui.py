@@ -114,7 +114,7 @@ class ControlPanel:
         btns.pack(fill="x", padx=20, pady=(10, 4))
         for label, cmd in [("Dashboard", self.open_dashboard),
                            ("Settings", self.open_settings),
-                           ("Recalibrate", self.recalibrate),
+                           ("How to use", self.open_help),
                            ("Open Folder", self.open_folder)]:
             tk.Button(btns, text=label, command=cmd, bg=PANEL, fg=TEXT,
                       activebackground=LINE, activeforeground=TEXT, relief="flat",
@@ -183,15 +183,21 @@ class ControlPanel:
         self._set_status("STOPPED", MUTED)
 
     def open_dashboard(self):
+        if self.running and self.cfg.get("web_dashboard", True):
+            self._open(f"http://localhost:{self.cfg.get('web_port', 8000)}")
+            return
         p = os.path.join(BASE, "stats", "dashboard.html")
         if os.path.exists(p):
             self._open(p)
         else:
-            self._log("No dashboard yet — finish a session first.")
+            self._log("No dashboard yet — press START (live view) or finish a "
+                      "session first (stats page).")
 
     def open_settings(self):
-        self._open(os.path.join(BASE, "config.yaml"))
-        self._log("Opened config.yaml. Restart the recorder after saving changes.")
+        SettingsWindow(self.root, self.cfg, self._log)
+
+    def open_help(self):
+        HelpWindow(self.root)
 
     def open_folder(self):
         self._open(BASE)
@@ -241,6 +247,116 @@ class ControlPanel:
         except queue.Empty:
             pass
         self.root.after(100, self._drain)
+
+
+class SettingsWindow:
+    """Same live-appliable settings as the web dashboard's panel — changes hit
+    the running session immediately and persist to settings_override.yaml."""
+
+    def __init__(self, parent, cfg, log):
+        from webserver import SETTINGS, SETTINGS_META
+        self.cfg = cfg
+        self.log = log
+        self.settings = SETTINGS
+
+        w = tk.Toplevel(parent)
+        w.title("Settings")
+        w.configure(bg=BG)
+        w.geometry("460x520")
+        w.transient(parent)
+
+        tk.Label(w, text="SETTINGS", bg=BG, fg=ACCENT,
+                 font=("Consolas", 11, "bold")).pack(anchor="w", padx=20, pady=(16, 4))
+        tk.Label(w, text="Changes apply immediately — no restart needed.",
+                 bg=BG, fg=MUTED, font=("Consolas", 9)).pack(anchor="w", padx=20, pady=(0, 10))
+
+        body = tk.Frame(w, bg=BG)
+        body.pack(fill="both", expand=True, padx=20, pady=(0, 16))
+
+        self.vars = {}
+        for key, label in SETTINGS_META:
+            default, typ = SETTINGS[key]
+            row = tk.Frame(body, bg=BG)
+            row.pack(fill="x", pady=3)
+            tk.Label(row, text=label, bg=BG, fg=TEXT,
+                     font=("Consolas", 10)).pack(side="left")
+            if typ is bool:
+                var = tk.BooleanVar(value=bool(cfg.get(key, default)))
+                tk.Checkbutton(row, variable=var, bg=BG, selectcolor=PANEL,
+                               activebackground=BG, cursor="hand2",
+                               command=lambda k=key, v=var: self._save(k, v.get())
+                               ).pack(side="right")
+            else:
+                var = tk.StringVar(value=str(cfg.get(key, default)))
+                e = tk.Entry(row, textvariable=var, width=6, bg=PANEL, fg=TEXT,
+                             insertbackground=TEXT, relief="flat", justify="center",
+                             font=("Consolas", 10))
+                e.pack(side="right")
+                e.bind("<FocusOut>", lambda _e, k=key, v=var: self._save_num(k, v))
+                e.bind("<Return>", lambda _e, k=key, v=var: self._save_num(k, v))
+            self.vars[key] = var
+
+    def _save(self, key, value):
+        self.cfg[key] = value
+        try:
+            app.save_setting_overrides({key: value})
+        except Exception as e:
+            self.log(f"Could not save setting: {e}")
+            return
+        self.log(f"Setting saved: {key} = {value}")
+
+    def _save_num(self, key, var):
+        try:
+            value = max(0.0, float(var.get()))
+        except ValueError:
+            var.set(str(self.cfg.get(key, 0)))
+            return
+        self._save(key, value)
+
+
+HELP_TEXT = """KILL COUNTER + FEED
+Kills are detected automatically from the game screen. The count and
+activity log update within a second or two of each kill.
+
+TEST MODE
+Runs the full detector but never saves clips — good for a first run.
+
+DASHBOARD
+While running, opens the live view (also reachable from an iPad or phone
+on the same Wi-Fi — the URL is printed in the activity log). The live
+view has SAVE CLIP, instant replays, match highlight reels, a kill ding,
+and the same settings panel.
+
+MATCH HIGHLIGHTS
+About 30 seconds after you exfil, that match's clips become a highlight
+reel: stat card, Play of the Game, then every clip. An announcer version
+is built alongside it. Drop mp3s in the music folder for a soundtrack.
+
+SETTINGS
+Every option applies to the running session immediately and persists.
+config.yaml still holds the full documented configuration.
+
+WHERE FILES GO
+Clips land in your OBS output folder under Marathon Sessions/<date>/ —
+reels in reels/, vertical Shorts in shorts/, instant-replay copies in
+replays/, plus a screenshot of each exfil screen. A session recap,
+match card, and montage are written when you press STOP."""
+
+
+class HelpWindow:
+    def __init__(self, parent):
+        w = tk.Toplevel(parent)
+        w.title("How to use")
+        w.configure(bg=BG)
+        w.geometry("560x560")
+        w.transient(parent)
+        tk.Label(w, text="HOW TO USE", bg=BG, fg=ACCENT,
+                 font=("Consolas", 11, "bold")).pack(anchor="w", padx=20, pady=(16, 6))
+        t = scrolledtext.ScrolledText(w, bg=PANEL, fg=TEXT, relief="flat",
+                                      font=("Consolas", 10), wrap="word", borderwidth=0)
+        t.pack(fill="both", expand=True, padx=20, pady=(0, 16))
+        t.insert("1.0", HELP_TEXT)
+        t.configure(state="disabled")
 
 
 def main():
