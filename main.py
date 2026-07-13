@@ -147,11 +147,13 @@ def classify_event(raw_line: str) -> str:
     return "kill"
 
 
-def rename_clip_async(obs, session_id: str, tag: str, count: int) -> None:
+def rename_clip_async(obs, session_id: str, tag: str, count: int, on_done=None) -> None:
     """In the background: wait for OBS to finish writing the clip, then move it
     into a per-session folder with an event+time name. Never blocks or raises
     into the capture loop — on any hiccup the clip just keeps OBS's default name.
-    Prints what it does so clip organizing can be diagnosed."""
+    Prints what it does so clip organizing can be diagnosed.
+    on_done(dest) is called after a successful move (used to collect the
+    match's clips for the highlight reel)."""
     def work():
         try:
             # Wait for OBS to report the path AND finish writing (size stabilizes).
@@ -182,6 +184,8 @@ def rename_clip_async(obs, session_id: str, tag: str, count: int) -> None:
                 try:
                     shutil.move(path, dest)
                     print(f"  [organize] clip -> {dest}")
+                    if on_done is not None:
+                        on_done(dest)
                     return
                 except Exception as e:
                     last = e
@@ -375,6 +379,8 @@ def _setup_session(cfg, dry_run):
         "session_start": time.monotonic(),
         "session_tags": [],
         "min_save": cfg.get("min_save_interval_seconds", 2.0),
+        "match_clips": [],   # organized clip paths since the last exfil (this match)
+        "match_num": 0,
     }
 
 
@@ -391,7 +397,8 @@ def _flush_coalesce(s):
     if s["obs"].save_replay():
         s["last_save"] = time.monotonic()
         if s["organize"]:
-            rename_clip_async(s["obs"], s["session_id"], combo_tag, counts[0])
+            rename_clip_async(s["obs"], s["session_id"], combo_tag, counts[0],
+                              on_done=s["match_clips"].append)
     s["_coalesce_pending"] = []
     s["_coalesce_deadline"] = 0.0
 
@@ -454,8 +461,57 @@ def _maybe_capture_exfil(cfg, engine, lines, s, now):
             base = os.path.dirname(os.path.abspath(__file__))
             exfil_stats.log_match_stats(base, s["session_id"], stats_d,
                                         len(s["session_tags"]))
+        if cfg.get("make_match_reels", True) and save_dir:
+            _build_match_reel_async(cfg, s, save_dir, stats_d)
     except Exception as e:
         print(f"  [exfil] error: {e}")
+
+
+def _build_match_reel_async(cfg, s, session_dir, stats_d):
+    """Build this match's highlight reel in the background and pop it onto the
+    iPad dashboard. Waits before building so a final kill that's still in the
+    coalesce window / being organized makes it into the reel."""
+    s["match_num"] += 1
+    match_num = s["match_num"]
+
+    def work():
+        time.sleep(30)
+        clips, s["match_clips"] = s["match_clips"][:], []
+        if not clips:
+            print(f"  [reel] match {match_num}: no clips this match, skipping reel")
+            return
+        try:
+            import match_reel
+            import montage
+            base = os.path.dirname(os.path.abspath(__file__))
+            out = os.path.join(session_dir, "reels", f"match_{match_num}.mp4")
+            sub = []
+            b1 = []
+            if stats_d.get("runner_elims") is not None:
+                b1.append(f"{stats_d['runner_elims']} RUNNER ELIMS")
+            if stats_d.get("runner_damage") is not None:
+                b1.append(f"{stats_d['runner_damage']} RUNNER DMG")
+            if b1:
+                sub.append("  ·  ".join(b1))
+            b2 = []
+            if stats_d.get("run_time"):
+                b2.append(f"RUN TIME {stats_d['run_time']}")
+            b2.append(time.strftime("%Y-%m-%d %H:%M"))
+            sub.append("  ·  ".join(b2))
+
+            ok = match_reel.build_match_reel(
+                clips, out, montage.find_ffmpeg(base, cfg),
+                "MATCH HIGHLIGHTS", len(clips), sub,
+                os.path.join(base, "marathon_wordmark.png"))
+            if ok:
+                print(f"  [reel] match {match_num} highlights -> {out}")
+                if s["web"] is not None:
+                    s["web"].add_reel(f"Match {match_num} — {len(clips)} clip"
+                                      f"{'s' if len(clips) != 1 else ''}", out)
+        except Exception as e:
+            print(f"  [reel] error: {e}")
+
+    threading.Thread(target=work, daemon=True).start()
 
 
 def _check_manual_clip(s):
@@ -469,7 +525,7 @@ def _check_manual_clip(s):
                 print("  [manual clip saved from iPad]")
                 if s["organize"]:
                     rename_clip_async(s["obs"], s["session_id"], "manual",
-                                      s["count"])
+                                      s["count"], on_done=s["match_clips"].append)
             else:
                 print("  [manual clip: replay save failed]")
         else:

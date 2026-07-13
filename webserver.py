@@ -23,6 +23,7 @@ class LiveState:
         self._mono = None
         self.events = deque(maxlen=30)
         self._clip_requested = False
+        self.reels = []  # [{label, path}] — per-match highlight reels
 
     def reset(self):
         """Clear counts/feed for a fresh session (server stays up)."""
@@ -30,6 +31,18 @@ class LiveState:
             self.count = 0
             self.events.clear()
             self._clip_requested = False
+            self.reels.clear()
+
+    def add_reel(self, label, path):
+        with self._lock:
+            self.reels.append({"label": label, "path": path,
+                               "time": time.strftime("%H:%M")})
+
+    def get_reel_path(self, idx):
+        with self._lock:
+            if 0 <= idx < len(self.reels):
+                return self.reels[idx]["path"]
+            return None
 
     def set_running(self, running):
         with self._lock:
@@ -59,7 +72,9 @@ class LiveState:
         with self._lock:
             return {"running": self.running, "count": self.count,
                     "started": self.started,
-                    "events": list(self.events)}
+                    "events": list(self.events),
+                    "reels": [{"i": i, "label": r["label"], "time": r["time"]}
+                              for i, r in enumerate(self.reels)]}
 
 
 def local_ip():
@@ -90,12 +105,51 @@ def start_web(state, port, base_dir):
             self.end_headers()
             self.wfile.write(body)
 
+        def _send_video(self, fp):
+            """Stream a video file with HTTP Range support (Safari needs it)."""
+            size = os.path.getsize(fp)
+            start, end = 0, size - 1
+            rng = self.headers.get("Range")
+            if rng and rng.startswith("bytes="):
+                a, _, b = rng[6:].partition("-")
+                if a:
+                    start = int(a)
+                if b:
+                    end = min(int(b), size - 1)
+                self.send_response(206)
+                self.send_header("Content-Range", f"bytes {start}-{end}/{size}")
+            else:
+                self.send_response(200)
+            length = end - start + 1
+            self.send_header("Accept-Ranges", "bytes")
+            self.send_header("Content-Type", "video/mp4")
+            self.send_header("Content-Length", str(length))
+            self.end_headers()
+            with open(fp, "rb") as f:
+                f.seek(start)
+                remaining = length
+                while remaining > 0:
+                    chunk = f.read(min(65536, remaining))
+                    if not chunk:
+                        break
+                    self.wfile.write(chunk)
+                    remaining -= len(chunk)
+
         def do_GET(self):
             path = self.path.split("?")[0]
             try:
                 if path == "/status":
                     self._send(json.dumps(state.snapshot()).encode(),
                                "application/json", cache=False)
+                elif path.startswith("/reel/"):
+                    try:
+                        fp = state.get_reel_path(int(path.rsplit("/", 1)[1]))
+                    except ValueError:
+                        fp = None
+                    if fp and os.path.exists(fp):
+                        self._send_video(fp)
+                    else:
+                        self.send_error(404)
                 elif path in imgs:
                     fp = os.path.join(base_dir, imgs[path])
                     if os.path.exists(fp):
@@ -164,6 +218,23 @@ PAGE = """<!doctype html><html lang="en"><head><meta charset="utf-8">
     border-radius:8px; padding:7px 14px; font:inherit; font-size:.75rem;
     cursor:pointer; }
   .hint { color:var(--muted); font-size:.72rem; margin-top:22px; opacity:.8; }
+  .reels { text-align:left; margin-bottom:16px; }
+  .reels h3 { color:var(--muted); font-size:.68rem; letter-spacing:.14em;
+    text-transform:uppercase; margin:0 0 8px 2px; }
+  .reelrow { background:var(--panel); border:1px solid var(--accent); border-radius:10px;
+    padding:12px 14px; display:flex; align-items:center; gap:12px; cursor:pointer;
+    margin-bottom:8px; }
+  .reelrow .play { color:var(--accent); font-size:1.1rem; }
+  .reelrow .t { color:var(--muted); font-size:.75rem; margin-left:auto; }
+  .modal { display:none; position:fixed; inset:0; background:rgba(0,0,0,.92);
+    z-index:50; align-items:center; justify-content:center; flex-direction:column;
+    padding:16px; }
+  .modal.open { display:flex; }
+  .modal video { width:100%; max-width:900px; max-height:75vh; border-radius:12px;
+    background:#000; }
+  .modal .mlabel { color:var(--text); font-size:.85rem; margin:14px 0 10px; }
+  .modal .close { background:var(--panel); color:var(--text); border:1px solid var(--line);
+    border-radius:8px; padding:10px 26px; font:inherit; font-size:.8rem; cursor:pointer; }
   .feed { text-align:left; display:flex; flex-direction:column; gap:8px; }
   .row { background:var(--panel); border:1px solid var(--line); border-radius:10px;
     padding:11px 14px; display:flex; align-items:center; gap:12px; }
@@ -187,8 +258,14 @@ PAGE = """<!doctype html><html lang="en"><head><meta charset="utf-8">
   <div class="btnrow">
     <button class="fsbtn" id="fs" onclick="goFull()">Full screen</button>
   </div>
+  <div class="reels" id="reels" style="display:none"><h3>Match Highlights</h3><div id="reellist"></div></div>
   <div class="feed" id="feed"><div class="empty">Waiting for kills...</div></div>
   <div class="hint" id="hint">iPad: tap Share &rarr; Add to Home Screen for full screen.</div>
+</div>
+<div class="modal" id="modal">
+  <video id="reelvid" controls playsinline></video>
+  <div class="mlabel" id="mlabel"></div>
+  <button class="close" onclick="closeReel()">CLOSE</button>
 </div>
 <script>
   async function tick(){
@@ -210,10 +287,41 @@ PAGE = """<!doctype html><html lang="en"><head><meta charset="utf-8">
                  '<span class="t">'+e.time+'</span></div>';
         }).join('');
       }
+      var reels = d.reels || [];
+      var box = document.getElementById('reels');
+      var sig = reels.map(function(r){ return r.i+r.label; }).join('|');
+      if (reels.length){
+        box.style.display = 'block';
+        if (sig !== reelSig){  // only re-render on change so taps aren't eaten
+          document.getElementById('reellist').innerHTML = reels.map(function(r){
+            return '<div class="reelrow" onclick="openReel('+r.i+',this.dataset.label)" data-label="'+
+                   r.label.replace(/"/g,'')+'"><span class="play">&#9658;</span>'+
+                   '<span>'+r.label.replace(/</g,'&lt;')+'</span>'+
+                   '<span class="t">'+r.time+'</span></div>';
+          }).join('');
+        }
+        if (reels.length > lastReels && lastReels >= 0) openReel(reels.length-1, reels[reels.length-1].label);
+        lastReels = reels.length;
+      } else { box.style.display='none'; lastReels = 0; }
+      reelSig = sig;
     }catch(err){ document.getElementById('statustext').textContent='OFFLINE'; }
     setTimeout(tick, 1000);
   }
+  var lastReels = -1, reelSig = '';
   tick();
+
+  function openReel(i, label){
+    var v = document.getElementById('reelvid');
+    document.getElementById('mlabel').textContent = label || '';
+    v.src = '/reel/'+i;
+    document.getElementById('modal').classList.add('open');
+    v.play().catch(function(){});
+  }
+  function closeReel(){
+    var v = document.getElementById('reelvid');
+    v.pause(); v.removeAttribute('src'); v.load();
+    document.getElementById('modal').classList.remove('open');
+  }
 
   async function saveClip(){
     var btn = document.getElementById('clip');
