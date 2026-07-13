@@ -418,6 +418,8 @@ PAGE = """<!doctype html><html lang="en"><head><meta charset="utf-8">
     <p>Saves the last ~30 seconds manually — for a moment the detector missed or anything else worth keeping.</p>
     <h3>Sound</h3>
     <p>This device dings on every kill. Tap the page once after opening it (browser rule), then use SOUND to toggle.</p>
+    <h3>Screen staying awake</h3>
+    <p>The same first tap starts a keep-awake trick so the screen doesn't auto-lock. If it still sleeps, set iPad Settings &rarr; Display &amp; Brightness &rarr; Auto-Lock to Never while playing.</p>
     <h3>Match highlights</h3>
     <p>About 30 seconds after you exfil, a highlight reel of that match pops up here: stat card, Play of the Game, then every clip.</p>
     <p class="m">Two versions per match — clean, and one with an announcer voiceover. Both are tappable in the list.</p>
@@ -600,12 +602,26 @@ PAGE = """<!doctype html><html lang="en"><head><meta charset="utf-8">
     setTimeout(function(){ btn.textContent='SAVE CLIP'; btn.classList.remove('fired'); }, 1500);
   }
 
-  var wl = null;
+  // Keep the screen awake. The Wake Lock API only works on secure pages
+  // (https/localhost) — over plain http on the LAN, iOS ignores it. Fallback:
+  // an invisible looping video (started by the first tap), which iOS treats
+  // as media playback and keeps the screen on.
+  var wl = null, nsVid = null;
   async function keepAwake(){
     try { if ('wakeLock' in navigator) { wl = await navigator.wakeLock.request('screen'); } } catch(e){}
   }
+  function keepAwakeVideo(){
+    if (nsVid) { nsVid.play().catch(function(){}); return; }
+    var v = document.createElement('video');
+    v.setAttribute('playsinline', ''); v.muted = true; v.loop = true;
+    v.style.cssText = 'position:fixed;width:1px;height:1px;opacity:0;pointer-events:none;';
+    v.src = 'data:video/mp4;base64,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';
+    document.body.appendChild(v);
+    v.play().then(function(){ nsVid = v; }).catch(function(){ v.remove(); });
+  }
+  document.addEventListener('pointerdown', keepAwakeVideo);
   document.addEventListener('visibilitychange', function(){
-    if (document.visibilityState === 'visible') keepAwake();
+    if (document.visibilityState === 'visible'){ keepAwake(); if (nsVid) nsVid.play().catch(function(){}); }
   });
   keepAwake();
 
