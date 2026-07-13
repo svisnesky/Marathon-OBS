@@ -441,7 +441,14 @@ def _maybe_capture_exfil(cfg, engine, lines, s, now):
         if not exfil_stats.looks_like_exfil(lines):
             return
         s["_last_exfil"] = now
-        stats_d = exfil_stats.capture_exfil_stats(cfg, engine)
+        save_dir = ""
+        try:
+            rec = s["obs"].get_record_directory()
+            if rec:
+                save_dir = os.path.join(rec, "Marathon Sessions", s["session_id"])
+        except Exception:
+            pass
+        stats_d = exfil_stats.capture_exfil_stats(cfg, engine, save_dir)
         print(exfil_stats.report(stats_d, Counter(s["session_tags"])))
         if stats_d:
             base = os.path.dirname(os.path.abspath(__file__))

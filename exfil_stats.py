@@ -76,15 +76,26 @@ def parse_exfil_lines(lines) -> dict:
     return stats
 
 
-def capture_exfil_stats(cfg, engine) -> dict:
+def capture_exfil_stats(cfg, engine, save_dir: str = ""):
     """One-off full-frame grab + OCR of the stat panel. Returns parsed stats
-    ({} if the panel couldn't be read)."""
+    ({} if the panel couldn't be read). If save_dir is given, also saves the
+    full exfil screen there as a PNG keepsake."""
     if cfg.get("capture_source") == "screen":
         from capture import grab_full_screenshot
         frame = grab_full_screenshot(cfg.get("monitor_index", 1))
     else:
         from capture import grab_full_virtualcam
         frame = grab_full_virtualcam(cfg.get("obs_virtualcam_index", 0))
+
+    if save_dir:
+        try:
+            import cv2
+            os.makedirs(save_dir, exist_ok=True)
+            shot = os.path.join(save_dir, f"exfil_{time.strftime('%H-%M-%S')}.png")
+            cv2.imwrite(shot, frame)
+            print(f"  [exfil] screen saved -> {shot}")
+        except Exception as e:
+            print(f"  [exfil] could not save screen: {e}")
 
     H, W = frame.shape[:2]
     x, y = int(PANEL_FRAC["x"] * W), int(PANEL_FRAC["y"] * H)
