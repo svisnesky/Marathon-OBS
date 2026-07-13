@@ -367,6 +367,12 @@ PAGE = """<!doctype html><html lang="en"><head><meta charset="utf-8">
   .savedmsg { color:var(--accent); font-size:.75rem; text-align:center; margin-top:10px;
     opacity:0; transition:opacity .3s; }
   .savedmsg.show { opacity:1; }
+  .help h3 { color:var(--accent); font-size:.72rem; letter-spacing:.14em;
+    text-transform:uppercase; margin:16px 0 6px; }
+  .help h3:first-of-type { margin-top:0; }
+  .help p { color:var(--text); font-size:.82rem; line-height:1.5; margin:0 0 4px; }
+  .help .m { color:var(--muted); }
+  .help code { color:var(--accent); font-size:.78rem; }
   .feed { text-align:left; display:flex; flex-direction:column; gap:8px; }
   .row { background:var(--panel); border:1px solid var(--line); border-radius:10px;
     padding:11px 14px; display:flex; align-items:center; gap:12px; }
@@ -390,6 +396,7 @@ PAGE = """<!doctype html><html lang="en"><head><meta charset="utf-8">
   <div class="btnrow">
     <button class="fsbtn" id="snd" onclick="toggleSound()">SOUND: ON</button>
     <button class="fsbtn" onclick="openSettings()">Settings</button>
+    <button class="fsbtn" onclick="openHelp()">How to use</button>
     <button class="fsbtn" id="fs" onclick="goFull()">Full screen</button>
   </div>
   <div class="reels" id="reels" style="display:none"><h3>Match Highlights</h3><div id="reellist"></div></div>
@@ -401,6 +408,30 @@ PAGE = """<!doctype html><html lang="en"><head><meta charset="utf-8">
   <video id="reelvid" controls playsinline></video>
   <div class="mlabel" id="mlabel"></div>
   <button class="close" onclick="closeReel()">CLOSE</button>
+</div>
+<div class="modal" id="helpmodal">
+  <div class="settings help">
+    <h2>How to use</h2>
+    <h3>Kill counter + feed</h3>
+    <p>Kills are detected automatically from the game screen. The big number and the feed update within a second or two of each kill.</p>
+    <h3>Save clip</h3>
+    <p>Saves the last ~30 seconds manually — for a moment the detector missed or anything else worth keeping.</p>
+    <h3>Sound</h3>
+    <p>This device dings on every kill. Tap the page once after opening it (browser rule), then use SOUND to toggle.</p>
+    <h3>Match highlights</h3>
+    <p>About 30 seconds after you exfil, a highlight reel of that match pops up here: stat card, Play of the Game, then every clip.</p>
+    <p class="m">Two versions per match — clean, and one with an announcer voiceover. Both are tappable in the list.</p>
+    <h3>Instant replays</h3>
+    <p>Every kill clip appears here seconds after it saves. Tap to rewatch. Keeps the last 20.</p>
+    <h3>Music on reels</h3>
+    <p>Drop an mp3 into the <code>music</code> folder next to the app and reels get a soundtrack automatically.</p>
+    <h3>Settings</h3>
+    <p>Every toggle applies to the running session immediately — no restart, no config file editing.</p>
+    <h3>Where files go</h3>
+    <p class="m">Clips land in your OBS output folder under <code>Marathon Sessions/&lt;date&gt;/</code> — reels in <code>reels/</code>, vertical Shorts in <code>shorts/</code>, plus a screenshot of each exfil screen. A session recap, match card, and montage are built when you stop.</p>
+  </div>
+  <div style="height:14px"></div>
+  <button class="close" onclick="closeHelp()">CLOSE</button>
 </div>
 <div class="modal" id="setmodal">
   <div class="settings">
@@ -547,6 +578,8 @@ PAGE = """<!doctype html><html lang="en"><head><meta charset="utf-8">
   function closeSettings(){
     document.getElementById('setmodal').classList.remove('open');
   }
+  function openHelp(){ document.getElementById('helpmodal').classList.add('open'); }
+  function closeHelp(){ document.getElementById('helpmodal').classList.remove('open'); }
   async function saveSetting(el){
     var key = el.dataset.key;
     var val = el.type === 'checkbox' ? el.checked : parseFloat(el.value);
