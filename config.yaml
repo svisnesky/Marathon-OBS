@@ -26,10 +26,15 @@ popup_confirm_frames: 2      # popup must persist this many frames in a row to c
                              # (rejects single-frame OCR noise; raise to 3 if still noisy)
 popup_absence_frames: 2      # popup must vanish this many frames before it can re-fire
 # If any of these appear on screen, skip detection (you're downed / can't get
-# kills) so the death UI + lingering feed text don't count as a false kill.
+# kills / it's an NPC popup or a summary screen) so that text can't count as a
+# false kill.
 suppress_phrases:
-  - "SELF REVIVE"
-  - "GIVE UP"
+  - "SELF REVIVE"        # death screen
+  - "GIVE UP"            # death screen
+  - "UESC"               # NPC kill popups: "UESC CMDR ELIM", "UESC DRONE ELIM"
+  - "RUNNER DAMAGE"      # exfil summary screen stats (in the OCR crop region)
+  - "CREW REVIVES"       # exfil summary screen stats
+  - "INVENTORY VALUE"    # exfil summary screen stats
 # require_reward: only count a kill when a reward ("+15 XP", "+50", "+10 XP") is
 # also on screen. This is the main filter against loading/menu-screen false
 # positives (that text has no reward). Set false only if it misses real kills.
