@@ -103,11 +103,18 @@ class ControlPanel:
                                 font=("Segoe UI", 13, "bold"), height=2, cursor="hand2")
         self.toggle.pack(fill="x", padx=20, pady=(6, 4))
 
+        # test-mode toggle (native Checkbutton indicators are invisible on the
+        # dark theme on Windows — use an explicit ON/OFF button instead)
         self.dry = tk.BooleanVar(value=False)
-        tk.Checkbutton(r, text="Test mode (detect only, don't save clips)",
-                       variable=self.dry, bg=BG, fg=MUTED, selectcolor=PANEL,
-                       activebackground=BG, activeforeground=TEXT,
-                       font=("Consolas", 9)).pack(anchor="w", padx=20)
+        dryrow = tk.Frame(r, bg=BG)
+        dryrow.pack(fill="x", padx=20)
+        tk.Label(dryrow, text="Test mode (detect only, don't save clips)",
+                 bg=BG, fg=MUTED, font=("Consolas", 9)).pack(side="left")
+        self.dry_btn = tk.Button(dryrow, width=5, relief="flat", borderwidth=0,
+                                 font=("Consolas", 9, "bold"), cursor="hand2",
+                                 command=self._flip_dry)
+        self._render_dry()
+        self.dry_btn.pack(side="right")
 
         # quick buttons
         btns = tk.Frame(r, bg=BG)
@@ -131,6 +138,18 @@ class ControlPanel:
         self.log.configure(state="disabled")
         self._log("Ready. Make sure OBS is open with the Replay Buffer running, "
                   "then press START.")
+
+    def _render_dry(self):
+        on = self.dry.get()
+        self.dry_btn.config(text="ON" if on else "OFF",
+                            bg=ACCENT if on else LINE,
+                            fg=BG if on else MUTED,
+                            activebackground="#bfe038" if on else LINE,
+                            activeforeground=BG if on else TEXT)
+
+    def _flip_dry(self):
+        self.dry.set(not self.dry.get())
+        self._render_dry()
 
     # --- actions -------------------------------------------------------------
 
