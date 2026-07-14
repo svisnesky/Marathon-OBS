@@ -37,6 +37,11 @@ def _build_card(out_png: str, title: str, kills, kills_label: str,
     """1920x1080 stat card in the match-card style."""
     try:
         from PIL import Image, ImageDraw
+    except ImportError:
+        print("  [reel] Pillow not installed — no stat cards. "
+              "Run: .venv\\Scripts\\python -m pip install pillow")
+        return False
+    try:
 
         W, H = 1920, 1080
         img = Image.new("RGB", (W, H), BG)
@@ -149,6 +154,13 @@ def build_match_reel(clips, out_path: str, ffmpeg: str,
                        "KILL" + ("S" if potg["kills"] != 1 else ""),
                        [tag_txt], wordmark_path):
             have_potg_card = True
+
+    n_cards = len(cards) + (1 if have_potg_card else 0)
+    if n_cards:
+        print(f"  [reel] {n_cards} title/POTG card(s) built")
+    else:
+        print("  [reel] NO cards built (Pillow missing?) — reel will be clips only. "
+              "Run: .venv\\Scripts\\python -m pip install pillow")
 
     # Input plan: title card, [clip0 (potg)], [potg card inserted BEFORE clip0]...
     # Segment order: title card -> (potg card -> potg clip) -> remaining clips.

@@ -110,7 +110,8 @@ class ControlPanel:
         dryrow.pack(fill="x", padx=20)
         tk.Label(dryrow, text="Test mode (detect only, don't save clips)",
                  bg=BG, fg=MUTED, font=("Consolas", 9)).pack(side="left")
-        self.dry_btn = tk.Button(dryrow, width=5, relief="flat", borderwidth=0,
+        self.dry_btn = tk.Button(dryrow, width=9, relief="raised", bd=2,
+                                 padx=6, pady=2,
                                  font=("Consolas", 9, "bold"), cursor="hand2",
                                  command=self._flip_dry)
         self._render_dry()
@@ -141,9 +142,11 @@ class ControlPanel:
 
     def _render_dry(self):
         on = self.dry.get()
-        self.dry_btn.config(text="ON" if on else "OFF",
-                            bg=ACCENT if on else LINE,
-                            fg=BG if on else MUTED,
+        # ASCII box in the label so the state is legible even if button bg
+        # colors don't paint on the user's Windows theme
+        self.dry_btn.config(text="[X] ON" if on else "[  ] OFF",
+                            bg=ACCENT if on else PANEL,
+                            fg=BG if on else TEXT,
                             activebackground="#bfe038" if on else LINE,
                             activeforeground=BG if on else TEXT)
 
@@ -314,13 +317,15 @@ class SettingsWindow:
                 self.vars[key] = var
 
     def _make_toggle(self, row, key, initial):
-        btn = tk.Button(row, width=5, relief="flat", borderwidth=0,
+        btn = tk.Button(row, width=9, relief="raised", bd=2, padx=6, pady=2,
                         font=("Consolas", 9, "bold"), cursor="hand2")
 
         def render(val):
-            btn.config(text="ON" if val else "OFF",
-                       bg=ACCENT if val else LINE,
-                       fg=BG if val else MUTED,
+            # ASCII box in the label so the state reads even if button bg
+            # colors don't paint on the user's Windows theme
+            btn.config(text="[X] ON" if val else "[  ] OFF",
+                       bg=ACCENT if val else PANEL,
+                       fg=BG if val else TEXT,
                        activebackground="#bfe038" if val else LINE,
                        activeforeground=BG if val else TEXT)
 

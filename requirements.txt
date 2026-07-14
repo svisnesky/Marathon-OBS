@@ -21,5 +21,8 @@ scipy>=1.10             # normalized cross-correlation for sound matching
 # OBS control (obs-websocket v5)
 obsws-python>=1.6
 
-# Optional: system-tray skull icon (run with --tray). Pillow comes via easyocr.
+# Match cards, reel title/POTG cards, shorts labels
+Pillow>=10.0
+
+# Optional: system-tray skull icon (run with --tray).
 pystray>=0.19
