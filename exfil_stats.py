@@ -76,32 +76,48 @@ def parse_exfil_lines(lines) -> dict:
     return stats
 
 
-def capture_exfil_stats(cfg, engine, save_dir: str = ""):
-    """One-off full-frame grab + OCR of the stat panel. Returns parsed stats
-    ({} if the panel couldn't be read). If save_dir is given, also saves the
-    full exfil screen there as a PNG keepsake."""
+def _grab_full(cfg):
     if cfg.get("capture_source") == "screen":
         from capture import grab_full_screenshot
-        frame = grab_full_screenshot(cfg.get("monitor_index", 1))
-    else:
-        from capture import grab_full_virtualcam
-        frame = grab_full_virtualcam(cfg.get("obs_virtualcam_index", 0))
+        return grab_full_screenshot(cfg.get("monitor_index", 1))
+    from capture import grab_full_virtualcam
+    return grab_full_virtualcam(cfg.get("obs_virtualcam_index", 0))
 
-    if save_dir:
-        try:
-            import cv2
-            os.makedirs(save_dir, exist_ok=True)
-            shot = os.path.join(save_dir, f"exfil_{time.strftime('%H-%M-%S')}.png")
-            cv2.imwrite(shot, frame)
-            print(f"  [exfil] screen saved -> {shot}")
-        except Exception as e:
-            print(f"  [exfil] could not save screen: {e}")
 
+def _parse_panel(frame, engine) -> dict:
     H, W = frame.shape[:2]
     x, y = int(PANEL_FRAC["x"] * W), int(PANEL_FRAC["y"] * H)
     w, h = int(PANEL_FRAC["w"] * W), int(PANEL_FRAC["h"] * H)
     panel = frame[y:y + h, x:x + w]
     return parse_exfil_lines(engine.read_lines(panel))
+
+
+def capture_exfil_stats(cfg, engine, save_dir: str = "", retries: int = 3):
+    """Grab the exfil screen and OCR the (always-centered) stat panel. The panel
+    animates in, so retry a few times and keep the first good parse. Returns the
+    parsed stats ({} if unreadable). Saves the screen PNG once if save_dir given."""
+    saved = False
+    best = {}
+    for attempt in range(max(1, retries)):
+        frame = _grab_full(cfg)
+        if save_dir and not saved:
+            try:
+                import cv2
+                os.makedirs(save_dir, exist_ok=True)
+                shot = os.path.join(save_dir, f"exfil_{time.strftime('%H-%M-%S')}.png")
+                cv2.imwrite(shot, frame)
+                print(f"  [exfil] screen saved -> {shot}")
+                saved = True
+            except Exception as e:
+                print(f"  [exfil] could not save screen: {e}")
+        stats = _parse_panel(frame, engine)
+        if len(stats) > len(best):
+            best = stats
+        # a good read has most of the labels; stop early once we have them
+        if len(best) >= 4:
+            break
+        time.sleep(0.6)  # let the panel finish animating in
+    return best
 
 
 def log_match_stats(base_dir: str, session_id: str, stats: dict, detected_kills: int) -> str:
