@@ -200,7 +200,7 @@ def build_match_reel(clips, out_path: str, ffmpeg: str,
     a_out = "[cat]"
     if music_path and os.path.exists(music_path):
         cmd += ["-stream_loop", "-1", "-i", music_path]
-        vol = max(0.0, float(music_volume))
+        vol = max(0.0, min(1.0, float(music_volume)))
         chains.append(f"[{in_i}:a]aformat=sample_rates=48000:channel_layouts=stereo,"
                       f"volume={vol}[mus]")
         chains.append("[cat][mus]amix=inputs=2:duration=first:normalize=0[mixed]")

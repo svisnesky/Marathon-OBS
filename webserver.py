@@ -21,6 +21,7 @@ SETTINGS = {
     "kill_coalesce_seconds": (8.0, float),  # group kills into one clip window
     "make_match_reels": (True, bool),
     "reel_music": (True, bool),
+    "reel_music_volume": (0.08, float),     # 0-1 loudness of the reel music bed
     "reel_announcer": (True, bool),
     "make_shorts": (True, bool),
     "shorts_labels": (True, bool),
@@ -34,6 +35,7 @@ SETTINGS_META = [
     ("kill_coalesce_seconds", "Group kills within (seconds)"),
     ("make_match_reels", "Match highlight reels"),
     ("reel_music", "Reel music bed"),
+    ("reel_music_volume", "Reel music volume (0-1)"),
     ("reel_announcer", "Reel announcer version"),
     ("make_shorts", "Vertical Shorts renders"),
     ("shorts_labels", "Shorts kill labels"),
@@ -568,6 +570,15 @@ PAGE = """<!doctype html><html lang="en"><head><meta charset="utf-8">
                  '<label class="switch"><input type="checkbox" data-key="'+key+'"'+
                  (val ? ' checked' : '')+' onchange="saveSetting(this)">'+
                  '<span class="slider"></span></label></div>';
+        }
+        if (key.indexOf('volume') !== -1){  // 0-1 range slider with live value
+          return '<div class="setrow"><span>'+label+'</span>'+
+                 '<span style="display:flex;align-items:center;gap:10px">'+
+                 '<input type="range" min="0" max="1" step="0.02" data-key="'+key+'" value="'+val+'"'+
+                 ' oninput="document.getElementById(\\'v_'+key+'\\').textContent=(+this.value).toFixed(2)"'+
+                 ' onchange="saveSetting(this)">'+
+                 '<span id="v_'+key+'" style="width:34px;text-align:right">'+(+val).toFixed(2)+'</span>'+
+                 '</span></div>';
         }
         return '<div class="setrow"><span>'+label+'</span>'+
                '<input type="number" step="0.5" min="0" data-key="'+key+'" value="'+val+'"'+
