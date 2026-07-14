@@ -74,6 +74,7 @@ def build_detector(cfg: dict):
             absence_frames=cfg.get("popup_absence_frames", 2),
             confirm_frames=cfg.get("popup_confirm_frames", 2),
             require_reward=cfg.get("require_reward", True),
+            cooldown_seconds=cfg.get("popup_cooldown_seconds", 2.0),
         )
     elif mode == "killfeed":
         det = KillDetector(
@@ -485,6 +486,7 @@ def _handle_kill(cfg, ev, s, on_count=None):
     count = s["count"]
     tag = classify_event(ev.raw_line)
     s["session_tags"].append(tag)
+    s.setdefault("match_tags", []).append(tag)  # reset each exfil for the audit
     print(f"KILL #{count} [{tag}]: {ev.raw_line!r}")
     play_kill_sound(cfg)
     s["obs"].set_counter(count)
@@ -524,11 +526,15 @@ def _maybe_capture_exfil(cfg, engine, lines, s, now):
         except Exception:
             pass
         stats_d = exfil_stats.capture_exfil_stats(cfg, engine, save_dir)
-        print(exfil_stats.report(stats_d, Counter(s["session_tags"])))
+        # Audit THIS match's detected kills vs the game's count, then reset the
+        # per-match tally for the next match.
+        match_tags = s.get("match_tags", [])
+        print(exfil_stats.report(stats_d, Counter(match_tags)))
         if stats_d:
             base = os.path.dirname(os.path.abspath(__file__))
             exfil_stats.log_match_stats(base, s["session_id"], stats_d,
-                                        len(s["session_tags"]))
+                                        len(match_tags))
+        s["match_tags"] = []
         if cfg.get("make_match_reels", True) and save_dir:
             _build_match_reel_async(cfg, s, save_dir, stats_d)
     except Exception as e:

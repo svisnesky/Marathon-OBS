@@ -16,6 +16,7 @@ def build_detector(cfg):
         absence_frames=cfg.get("popup_absence_frames", 2),
         confirm_frames=cfg.get("popup_confirm_frames", 2),
         require_reward=cfg.get("require_reward", True),
+        cooldown_seconds=cfg.get("popup_cooldown_seconds", 0.0),
     )
 
 
@@ -32,14 +33,21 @@ CASES = [
     # --- real kills (must fire) ---
     ("runner down",            ["RUNNER DOWN +15 XP"],            True),
     ("runner down ocr slip",   ["RUNNER D0WN +15 XP"],            True),
+    ("runner doin (real ocr)", ["RUNNER DOIN | +15 XP"],          True),
     ("precision down",         ["PRECISION DOWN +25"],            True),
     ("finisher",               ["FINISHER 5Tz +50"],              True),
     ("runner elim",            ["RUNNER ELIM +10 XP"],            True),
     ("elim + finisher combo",  ["RUNNER ELIM +10 XP", "FINISHER 5Tz +50"], True),
+    # real combined read from the live log (down+elim+finisher in one frame)
+    ("real combined kill",     ["RUNNER DOIN +15 XP RUNNER ELIM +10 XP FINISHER 5 +50"], True),
     # --- NPC kills (must NOT fire) ---
     ("uesc cmdr elim",         ["UESC CMDR ELIM +15XP"],          False),
     ("uesc drone elim",        ["UESC DRONE ELIM +5XP"],          False),
     ("uesc drone ocr slip",    ["UE5C DRONE ELIM +5XP"],          False),
+    ("uesc defense elim",      ["UESC DEFENSE ELIM | +5 XP"],     False),
+    ("uesc elim (real ocr)",   ["UESC ELIM | +5 XP"],             False),
+    ("harvesting reward",      ["HARVESTING | NU +5"],            False),
+    ("step complete reward",   ["STEP COMPLETE | 6 +25"],         False),
     # --- non-kill screens (must NOT fire) ---
     ("menu text",              ["PLAY  STATS  LOADOUT"],          False),
     ("loading tip",            ["RUNNERS CAN BE REVIVED BY CREW"], False),

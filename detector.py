@@ -190,15 +190,21 @@ class PopupDetector:
         require_xp_reward: bool = False,
         confirm_frames: int = 1,
         require_reward: bool = True,
+        cooldown_seconds: float = 0.0,
     ):
         self.phrases = [_normalize(p) for p in (trigger_phrases or ["runner down"]) if p.strip()]
         self.threshold = phrase_match_threshold
         self.absence_frames = max(1, absence_frames)
         self.confirm_frames = max(1, confirm_frames)
         self.require_reward = require_reward
+        # Minimum seconds between fires. With confirm_frames=1 a single popup
+        # whose OCR flickers (clean, garbled, clean) could otherwise re-fire the
+        # same kill; the cooldown collapses those into one.
+        self.cooldown = max(0.0, cooldown_seconds)
         self._streak = 0        # consecutive matched frames
         self._fired = False     # already counted this appearance
         self._absent_count = absence_frames
+        self._last_fire = -1e9
 
     def _reward_present(self, raw: str) -> bool:
         """Real kill popups show a reward: '+15 XP', '+50', '+10 XP'. Loading /
@@ -226,8 +232,10 @@ class PopupDetector:
             self._absent_count = 0
             # only count once the popup has persisted enough frames (real popups
             # linger; single-frame OCR noise is rejected)
-            if self._streak >= self.confirm_frames and not self._fired:
+            if (self._streak >= self.confirm_frames and not self._fired
+                    and now - self._last_fire >= self.cooldown):
                 self._fired = True
+                self._last_fire = now
                 return KillEvent(
                     timestamp=now,
                     raw_line=" ".join(lines).strip(),
