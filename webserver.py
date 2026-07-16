@@ -202,6 +202,110 @@ def _esc(s):
     return str(s).replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
 
 
+import re as _re
+import urllib.parse as _uparse
+
+_SAFE_PART = _re.compile(r"^[A-Za-z0-9 ._+\-]+$")
+
+
+def _archive_video_path(record_dir: str, sess: str, rel: str):
+    """Resolve a session media file SAFELY. sess is a session folder name and
+    rel a file inside it (optionally one level deep: 'reels/match_1.mp4').
+    Anything that isn't a plain name, or escapes the session dir, -> None."""
+    if not record_dir or not _SAFE_PART.match(sess or ""):
+        return None
+    parts = (rel or "").split("/")
+    if not (1 <= len(parts) <= 2) or not all(_SAFE_PART.match(p) for p in parts):
+        return None
+    root = os.path.realpath(os.path.join(record_dir, "Marathon Sessions"))
+    path = os.path.realpath(os.path.join(root, sess, *parts))
+    if not path.startswith(root + os.sep) or not os.path.isfile(path):
+        return None
+    if not path.lower().endswith((".mp4", ".mkv", ".png")):
+        return None
+    return path
+
+
+def _session_recaps(base_dir: str):
+    """Per-match recap lines for every session, from squad_stats.csv (your
+    rows) -> {session_id: [line, ...]}."""
+    import csv as _csv
+    out = {}
+    path = os.path.join(base_dir, "stats", "squad_stats.csv")
+    if not os.path.exists(path):
+        return out
+    with open(path, encoding="utf-8") as f:
+        for r in _csv.DictReader(f):
+            if r.get("is_you") != "1":
+                continue
+            def n(k):
+                try:
+                    return int(float(r.get(k) or 0))
+                except ValueError:
+                    return 0
+            bits = [f"{n('runner_elims')} elim{'s' if n('runner_elims') != 1 else ''}",
+                    f"{n('runners_downed')} down{'s' if n('runners_downed') != 1 else ''}",
+                    f"{n('runner_damage'):,} dmg", f"{n('inventory_value'):,} loot"]
+            if r.get("runner"):
+                bits.append(f"on {r['runner']}")
+            out.setdefault(r.get("session", ""), []).append(
+                f"{r.get('time', '')[:5]} — " + " · ".join(bits))
+    return out
+
+
+def _archive_page(base_dir: str, record_dir: str) -> str:
+    root = os.path.join(record_dir, "Marathon Sessions") if record_dir else ""
+    sessions = []
+    if root and os.path.isdir(root):
+        recaps = _session_recaps(base_dir)
+        for name in sorted(os.listdir(root), reverse=True)[:60]:
+            sdir = os.path.join(root, name)
+            if not os.path.isdir(sdir) or not _SAFE_PART.match(name):
+                continue
+            media = []
+            sr = os.path.join(sdir, "session_reel.mp4")
+            if os.path.exists(sr):
+                media.append(("Session reel", f"session_reel.mp4"))
+            rdir = os.path.join(sdir, "reels")
+            if os.path.isdir(rdir):
+                for f in sorted(os.listdir(rdir)):
+                    if f.endswith(".mp4") and _SAFE_PART.match(f):
+                        label = f.replace(".mp4", "").replace("_", " ").capitalize()
+                        media.append((label, f"reels/{f}"))
+            pdir = os.path.join(sdir, "replays")
+            if os.path.isdir(pdir):
+                for f in sorted(os.listdir(pdir)):
+                    if f.endswith(".mp4") and _SAFE_PART.match(f):
+                        media.append((f.replace(".mp4", "").replace("_", " "), f"replays/{f}"))
+            n_clips = sum(1 for f in os.listdir(sdir)
+                          if f.lower().endswith((".mkv", ".mp4"))
+                          and not f.startswith(("highlights", "session_reel")))
+            sessions.append({"id": name, "media": media, "clips": n_clips,
+                             "recaps": recaps.get(name, [])})
+
+    blocks = []
+    for s in sessions:
+        date = s["id"].replace("_", " · ")
+        rec_html = "".join(f'<div class="rc">{_esc(l)}</div>' for l in s["recaps"]) \
+            or '<div class="rc none">no exfil stats recorded</div>'
+        rows = ""
+        for label, rel in s["media"]:
+            u = f"/avideo?s={_uparse.quote(s['id'])}&f={_uparse.quote(rel)}"
+            rows += (f'<div class="mrow"><span class="play">&#9658;</span>'
+                     f'<a class="ml" href="{u}" target="_blank">{_esc(label)}</a>'
+                     f'<a class="dl" href="{u}&dl=1">save</a></div>')
+        if not rows:
+            rows = '<div class="rc none">no reels/replays kept for this session</div>'
+        blocks.append(f"""<details><summary><b>{_esc(date)}</b>
+          <span class="meta">{s['clips']} clip{'s' if s['clips'] != 1 else ''}</span></summary>
+          <h4>Matches</h4>{rec_html}<h4>Watch / share</h4>{rows}</details>""")
+
+    body = "".join(blocks) or ('<p class="rc none">No sessions found yet'
+                               + ("" if record_dir else " — press START once so the app learns your OBS folder")
+                               + ".</p>")
+    return ARCHIVE_PAGE.replace("%%BODY%%", body)
+
+
 def _stats_page(base_dir: str) -> str:
     """Career + economy + squad leaderboard, built from stats/squad_stats.csv
     (with match_stats.csv as the fallback for your own older rows)."""
@@ -342,6 +446,33 @@ def start_web(state, port, base_dir, host="0.0.0.0"):
                 elif path == "/stats":
                     self._send(_stats_page(base_dir).encode("utf-8"),
                                "text/html; charset=utf-8", cache=False)
+                elif path == "/archive":
+                    self._send(_archive_page(base_dir,
+                                             getattr(state, "record_dir", "")).encode("utf-8"),
+                               "text/html; charset=utf-8", cache=False)
+                elif path == "/avideo":
+                    q = _uparse.parse_qs(self.path.partition("?")[2])
+                    fp = _archive_video_path(getattr(state, "record_dir", ""),
+                                             (q.get("s") or [""])[0],
+                                             (q.get("f") or [""])[0])
+                    if fp:
+                        if q.get("dl"):
+                            self.send_response(200)
+                            self.send_header("Content-Type", "application/octet-stream")
+                            self.send_header("Content-Disposition",
+                                             f'attachment; filename="{os.path.basename(fp)}"')
+                            self.send_header("Content-Length", str(os.path.getsize(fp)))
+                            self.end_headers()
+                            with open(fp, "rb") as f:
+                                while True:
+                                    chunk = f.read(65536)
+                                    if not chunk:
+                                        break
+                                    self.wfile.write(chunk)
+                        else:
+                            self._send_video(fp)
+                    else:
+                        self.send_error(404)
                 elif path.startswith("/reel/"):
                     try:
                         fp = state.get_reel_path(int(path.rsplit("/", 1)[1]))
@@ -399,6 +530,46 @@ def start_web(state, port, base_dir, host="0.0.0.0"):
     threading.Thread(target=srv.serve_forever, daemon=True).start()
     return srv
 
+
+ARCHIVE_PAGE = """<!doctype html><html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Marathon Archive</title>
+<style>
+  :root { --bg:#0b0f12; --panel:#12181d; --line:#232d34; --text:#e8edf0;
+          --muted:#7d8a94; --accent:#d3f24b; }
+  * { box-sizing:border-box; }
+  body { margin:0; background:var(--bg); color:var(--text);
+    font-family:ui-monospace,"SF Mono",Menlo,Consolas,monospace;
+    padding:calc(20px + env(safe-area-inset-top)) 16px calc(40px + env(safe-area-inset-bottom)); }
+  .wrap { max-width:720px; margin:0 auto; }
+  h2 { color:var(--accent); font-size:.95rem; letter-spacing:.16em; text-transform:uppercase; margin:0 0 4px; }
+  .sub { color:var(--muted); font-size:.78rem; margin:0 0 18px; }
+  details { background:var(--panel); border:1px solid var(--line); border-radius:12px;
+    padding:0 16px; margin-bottom:10px; }
+  summary { padding:14px 0; cursor:pointer; font-size:.9rem; list-style:none; }
+  summary::-webkit-details-marker { display:none; }
+  summary b { color:var(--text); }
+  .meta { color:var(--muted); font-size:.72rem; float:right; }
+  h4 { color:var(--muted); font-size:.62rem; letter-spacing:.16em; text-transform:uppercase;
+    margin:10px 0 8px; }
+  .rc { font-size:.8rem; color:var(--text); padding:6px 0; border-bottom:1px solid var(--line); }
+  .rc.none { color:var(--muted); border:none; }
+  .mrow { display:flex; align-items:center; gap:10px; padding:9px 0;
+    border-bottom:1px solid var(--line); font-size:.82rem; }
+  .mrow:last-child, details .rc:last-of-type { border-bottom:none; }
+  .play { color:var(--accent); font-size:.8rem; }
+  .ml { color:var(--text); text-decoration:none; flex:1; }
+  .dl { color:var(--accent); text-decoration:none; font-size:.7rem; letter-spacing:.08em;
+    text-transform:uppercase; border:1px solid var(--line); border-radius:6px; padding:4px 10px; }
+  details > *:last-child { margin-bottom:14px; }
+  .back { display:inline-block; margin-top:22px; color:var(--muted); font-size:.75rem;
+    text-decoration:none; border:1px solid var(--line); border-radius:8px; padding:8px 16px; }
+</style></head><body><div class="wrap">
+  <h2>Archive</h2>
+  <p class="sub">Every session, kept. Tap a reel to watch; "save" downloads it for sharing (Files &rarr; share sheet &rarr; group chat).</p>
+  %%BODY%%
+  <a class="back" href="/">&larr; Back to the kill feed</a>
+</div></body></html>"""
 
 STATS_PAGE = """<!doctype html><html lang="en"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
@@ -575,6 +746,7 @@ PAGE = """<!doctype html><html lang="en"><head><meta charset="utf-8">
     <button class="fsbtn" id="snd" onclick="toggleSound()">SOUND: ON</button>
     <button class="fsbtn" onclick="openSettings()">Settings</button>
     <button class="fsbtn" onclick="location.href='/stats'">Stats</button>
+    <button class="fsbtn" onclick="location.href='/archive'">Archive</button>
     <button class="fsbtn" onclick="openHelp()">How to use</button>
     <button class="fsbtn" id="fs" onclick="goFull()">Full screen</button>
   </div>
@@ -604,6 +776,8 @@ PAGE = """<!doctype html><html lang="en"><head><meta charset="utf-8">
     <p class="m">Two versions per match — clean, and one with an announcer voiceover. Both are tappable in the list.</p>
     <h3>Instant replays</h3>
     <p>Every kill clip appears here seconds after it saves. Tap to rewatch. Keeps the last 20.</p>
+    <h3>Archive</h3>
+    <p>Past sessions never disappear: the Archive button lists every session with per-match recaps, all its reels and replays, and a "save" link to download any of them for sharing to the group chat.</p>
     <h3>Music on reels</h3>
     <p>Drop an mp3 into the <code>music</code> folder next to the app and reels get a soundtrack automatically.</p>
     <h3>Settings</h3>

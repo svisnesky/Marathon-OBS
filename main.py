@@ -561,6 +561,10 @@ def _setup_session(cfg, dry_run):
             web = _web_state
             web.reset()
             web.bind_config(cfg, save_setting_overrides)
+            try:
+                web.record_dir = obs.get_record_directory() or ""
+            except Exception:
+                pass
             web.set_running(True)
             print(f"Live view: http://{webserver.local_ip()}:{port}  "
                   f"(open in your iPad/phone browser on the same Wi-Fi)")
