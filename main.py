@@ -328,7 +328,7 @@ def show_overlay(cfg: dict) -> None:
         dur = str(cfg.get("overlay_duration_ms", 1400))
         alpha = str(cfg.get("overlay_alpha", 1.0))
         size = str(cfg.get("overlay_size", 140))
-        position = str(cfg.get("overlay_position", "custom:0.542,0.696"))
+        position = str(cfg.get("overlay_position", "custom:0.5,0.645"))
         margin = str(cfg.get("overlay_margin", 40))
         subprocess.Popen(
             [runner, script, image, dur, alpha, size, position, margin],
