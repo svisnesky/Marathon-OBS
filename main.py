@@ -159,19 +159,23 @@ def classify_event(raw_line: str) -> str:
     """Tag a kill by type from its popup text (for clip names + the recap).
     Fuzzy so OCR slips like 'Runner Dorm' still read as a down."""
     from detector import _normalize, phrase_matches
-    b = _normalize(raw_line)
+    b = _normalize(raw_line)  # brackets stripped, so "[ASSIST]" -> "assist"
 
     def has(p):
         return phrase_matches(p, b, 78)
 
+    # The [ASSIST] marker wins over everything: a "PRECISION DOWN [ASSIST]" is
+    # an assist, not your precision kill. Label it distinctly.
+    if has("assist"):
+        return "assist"
     if has("precision"):
         return "precision"
     if has("finisher"):
         return "finisher"
-    if has("assist") or has("elim"):
-        return "assist"
     if has("down") or has("runner down"):
         return "down"
+    if has("elim"):        # solo "RUNNER ELIM" (no assist marker) = your kill
+        return "kill"
     return "kill"
 
 
