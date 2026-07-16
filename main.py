@@ -693,15 +693,16 @@ def _build_match_reel_async(cfg, s, session_dir, stats_d):
             b2.append(time.strftime("%Y-%m-%d %H:%M"))
             sub.append("  ·  ".join(b2))
 
-            music = ""
+            tracks = []
             if cfg.get("reel_music", True):
-                music = match_reel.find_music(os.path.join(base, "music"))
+                tracks = match_reel.list_music(os.path.join(base, "music"))
 
             ok = match_reel.build_match_reel(
                 clips, out, ffmpeg,
                 "MATCH HIGHLIGHTS", total_kills, sub,
-                os.path.join(base, "marathon_wordmark.png"), music,
-                music_volume=cfg.get("reel_music_volume", 0.08))
+                os.path.join(base, "marathon_wordmark.png"),
+                music_volume=cfg.get("reel_music_volume", 0.08),
+                music_tracks=tracks)
             if ok:
                 print(f"  [reel] match {match_num} highlights -> {out}")
                 if s["web"] is not None:
@@ -727,6 +728,19 @@ def _build_match_reel_async(cfg, s, session_dir, stats_d):
             print(f"  [reel] error: {e}")
 
     threading.Thread(target=work, daemon=True).start()
+
+
+def _check_manual_kill(cfg, s, on_count=None):
+    """If the iPad '+1 KILL' button was tapped, count a kill the detector
+    missed — full pipeline: counter, ding, clip, instant replay."""
+    web = s["web"]
+    if web is not None and getattr(web, "pop_kill_request", None) and web.pop_kill_request():
+        from detector import KillEvent
+        print("  [+1 kill added from iPad]")
+        ev = KillEvent(timestamp=time.monotonic(),
+                       raw_line="MANUAL +1 (added from iPad)",
+                       killer="", victim="", is_self_kill=True)
+        _handle_kill(cfg, ev, s, on_count)
 
 
 def _check_manual_clip(s):
@@ -835,6 +849,7 @@ def _run_live_inner(cfg: dict, dry_run: bool = False, stop_event=None, on_count=
                         print("  -> HEADSHOT (skull popup)")
                         show_overlay(cfg)
 
+                _check_manual_kill(cfg, s, on_count)
                 _check_manual_clip(s)
 
                 elapsed = time.monotonic() - loop_start
@@ -901,6 +916,7 @@ def _run_live_audio(cfg: dict, dry_run: bool, stop_event, on_count):
                                }.get(ev_tag, "RUNNER DOWN") + f"  ({original_raw})"
                 _handle_kill(cfg, ev, s, on_count)
             _check_coalesce(s)
+            _check_manual_kill(cfg, s, on_count)
             _check_manual_clip(s)
             time.sleep(0.1)
     except KeyboardInterrupt:
@@ -1026,6 +1042,7 @@ def _run_live_template(cfg: dict, dry_run: bool, stop_event, on_count):
                 _handle_kill(cfg, ev, s, on_count)
 
             _check_coalesce(s)
+            _check_manual_kill(cfg, s, on_count)
             _check_manual_clip(s)
 
             elapsed = time.monotonic() - loop_start
@@ -1155,13 +1172,14 @@ def _build_session_reel_and_upload(cfg, session_dir, tags):
         sub = [f"{c.get('finisher',0)} FINISHERS  ·  {c.get('precision',0)} PRECISION  "
                f"·  {c.get('assist',0)} ASSISTS",
                time.strftime("%Y-%m-%d")]
-        music = ""
+        tracks = []
         if cfg.get("reel_music", True):
-            music = match_reel.find_music(os.path.join(base, "music"))
+            tracks = match_reel.list_music(os.path.join(base, "music"))
         ok = match_reel.build_match_reel(
             clips, out, ffmpeg, "SESSION HIGHLIGHTS", total, sub,
-            os.path.join(base, "marathon_wordmark.png"), music,
-            music_volume=cfg.get("reel_music_volume", 0.08))
+            os.path.join(base, "marathon_wordmark.png"),
+            music_volume=cfg.get("reel_music_volume", 0.08),
+            music_tracks=tracks)
         if not ok:
             print("  [session reel] build failed")
             return

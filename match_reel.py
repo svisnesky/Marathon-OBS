@@ -115,22 +115,86 @@ def pick_potg(clips: list[dict]):
 def find_music(music_dir: str) -> str:
     """A random music file from the folder — drop several in music/ and each
     reel gets a different soundtrack."""
-    if not os.path.isdir(music_dir):
-        return ""
-    tracks = [f for f in os.listdir(music_dir) if f.lower().endswith(MUSIC_EXTS)]
+    tracks = list_music(music_dir)
     if not tracks:
         return ""
     import random
-    return os.path.join(music_dir, random.choice(tracks))
+    return random.choice(tracks)
+
+
+def list_music(music_dir: str) -> list[str]:
+    if not os.path.isdir(music_dir):
+        return []
+    return [os.path.join(music_dir, f) for f in sorted(os.listdir(music_dir))
+            if f.lower().endswith(MUSIC_EXTS)]
+
+
+def _ffprobe_path(ffmpeg: str) -> str:
+    """ffprobe ships next to ffmpeg."""
+    d, base = os.path.split(ffmpeg)
+    probe = base.replace("ffmpeg", "ffprobe") if "ffmpeg" in base else "ffprobe"
+    return os.path.join(d, probe) if d else probe
+
+
+def probe_duration(path: str, ffmpeg: str):
+    """Media duration in seconds, or None."""
+    r = _run([_ffprobe_path(ffmpeg), "-v", "error", "-show_entries",
+              "format=duration", "-of", "csv=p=0", path])
+    try:
+        return float(r.stdout.strip().splitlines()[-1])
+    except (ValueError, IndexError):
+        return None
+
+
+def _music_inputs_and_chain(tracks: list[str], total: float, vol: float,
+                            ffmpeg: str, first_input_index: int):
+    """Build the soundtrack: random start points into each track, up to three
+    tracks crossfaded across the reel, faded in over the intro card and out at
+    the end. Returns (extra_cmd_args, [filter_chains]) producing [mus]."""
+    import random
+
+    XF = 2.0          # crossfade seconds between tracks
+    k = 1 if total <= 150 else min(3, len(tracks))
+    chosen = random.sample(tracks, k)
+    seg = total / k + XF + 2  # overlap + tail headroom per segment
+
+    args, chains, labels = [], [], []
+    idx = first_input_index
+    for j, t in enumerate(chosen):
+        dur = probe_duration(t, ffmpeg) or 0
+        # Start somewhere interesting, not the intro — but leave room to play
+        # a full segment before the track loops back around.
+        max_off = max(0.0, dur - seg - 4)
+        off = random.uniform(min(10.0, max_off), max_off) if max_off > 0 else 0.0
+        args += ["-stream_loop", "-1", "-ss", f"{off:.2f}", "-t", f"{seg:.2f}", "-i", t]
+        chains.append(f"[{idx}:a]aformat=sample_rates=48000:channel_layouts=stereo,"
+                      f"volume={vol}[m{j}]")
+        labels.append(f"[m{j}]")
+        idx += 1
+
+    cur = labels[0]
+    for j in range(1, k):
+        nxt = f"[mx{j}]"
+        chains.append(f"{cur}{labels[j]}acrossfade=d={XF}{nxt}")
+        cur = nxt
+
+    fade_out_at = max(0.0, total - 2.5)
+    chains.append(f"{cur}afade=t=in:d=1.5,afade=t=out:st={fade_out_at:.2f}:d=2.5[mus]")
+    return args, chains
 
 
 def build_match_reel(clips, out_path: str, ffmpeg: str,
                      title: str, kills: int, sub_lines: list[str],
                      wordmark_path: str = "", music_path: str = "",
-                     music_volume: float = 0.08) -> bool:
+                     music_volume: float = 0.08,
+                     music_tracks: list[str] | None = None) -> bool:
     """Title card [+ POTG card] + clips [+ music bed] -> one mp4.
 
-    music_volume is 0-1 (0.08 = quiet bed under the game audio)."""
+    music_volume is 0-1 (0.08 = quiet bed under the game audio).
+    music_tracks: pass the whole music library — the soundtrack starts at a
+    random point in a random track, fades in/out, and long reels rotate
+    through up to three tracks with crossfades. music_path (single file) is
+    the legacy fallback."""
     clips = _normalize_clips(clips)
     if not clips:
         print("  [reel] no clips on disk to build a reel from")
@@ -198,11 +262,24 @@ def build_match_reel(clips, out_path: str, ffmpeg: str,
     chains.append(f"{pairs}concat=n={len(segments)}:v=1:a=1[v][cat]")
 
     a_out = "[cat]"
-    if music_path and os.path.exists(music_path):
-        cmd += ["-stream_loop", "-1", "-i", music_path]
+    tracks = [t for t in (music_tracks or ([music_path] if music_path else []))
+              if t and os.path.exists(t)]
+    if tracks:
         vol = max(0.0, min(1.0, float(music_volume)))
-        chains.append(f"[{in_i}:a]aformat=sample_rates=48000:channel_layouts=stereo,"
-                      f"volume={vol}[mus]")
+        # Total reel length = cards + clips; needed for fade-out placement and
+        # per-track segment sizing. If probing fails, fall back to the plain
+        # looped bed (no fades).
+        n_cards = sum(1 for kind, _ in segments if kind == "card")
+        clip_durs = [probe_duration(c["path"], ffmpeg) for c in clips]
+        if all(d is not None for d in clip_durs):
+            total = n_cards * CARD_SECONDS + sum(clip_durs)
+            m_args, m_chains = _music_inputs_and_chain(tracks, total, vol, ffmpeg, in_i)
+            cmd += m_args
+            chains += m_chains
+        else:
+            cmd += ["-stream_loop", "-1", "-i", tracks[0]]
+            chains.append(f"[{in_i}:a]aformat=sample_rates=48000:channel_layouts=stereo,"
+                          f"volume={vol},afade=t=in:d=1.5[mus]")
         chains.append("[cat][mus]amix=inputs=2:duration=first:normalize=0[mixed]")
         a_out = "[mixed]"
 

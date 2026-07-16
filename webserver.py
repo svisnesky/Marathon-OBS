@@ -55,9 +55,11 @@ class LiveState:
         self._mono = None
         self.events = deque(maxlen=30)
         self._clip_requested = False
+        self._kill_requested = False
         self.reels = []  # [{label, path}] — per-match highlight reels
         self.replays = []  # [{id, label, path, time}] — per-kill instant replays
         self._replay_seq = 0
+        self.tag_counts = {}  # kill-type breakdown for the dashboard tiles
         self._cfg = None       # live config dict (bound per session)
         self._save_cb = None   # persists changed settings to disk
 
@@ -67,8 +69,21 @@ class LiveState:
             self.count = 0
             self.events.clear()
             self._clip_requested = False
+            self._kill_requested = False
             self.reels.clear()
             self.replays.clear()
+            self.tag_counts = {}
+
+    def request_kill(self):
+        with self._lock:
+            self._kill_requested = True
+
+    def pop_kill_request(self) -> bool:
+        with self._lock:
+            if getattr(self, "_kill_requested", False):
+                self._kill_requested = False
+                return True
+            return False
 
     def add_replay(self, label, path):
         with self._lock:
@@ -141,6 +156,7 @@ class LiveState:
     def record(self, count, tag, text):
         with self._lock:
             self.count = count
+            self.tag_counts[tag] = self.tag_counts.get(tag, 0) + 1
             self.events.appendleft(
                 {"time": time.strftime("%H:%M:%S"), "tag": tag, "text": (text or "")[:60]})
 
@@ -157,8 +173,12 @@ class LiveState:
 
     def snapshot(self):
         with self._lock:
+            elapsed = 0
+            if self.running and self._mono is not None:
+                elapsed = int(time.monotonic() - self._mono)
             return {"running": self.running, "count": self.count,
-                    "started": self.started,
+                    "started": self.started, "elapsed": elapsed,
+                    "tags": dict(self.tag_counts),
                     "events": list(self.events),
                     "reels": [{"i": i, "label": r["label"], "time": r["time"]}
                               for i, r in enumerate(self.reels)],
@@ -271,6 +291,9 @@ def start_web(state, port, base_dir):
                 if path == "/clip":
                     state.request_clip()
                     self._send(b'{"ok":true}', "application/json", cache=False)
+                elif path == "/addkill":
+                    state.request_kill()
+                    self._send(b'{"ok":true}', "application/json", cache=False)
                 elif path == "/config":
                     n = int(self.headers.get("Content-Length") or 0)
                     try:
@@ -316,6 +339,22 @@ PAGE = """<!doctype html><html lang="en"><head><meta charset="utf-8">
   .live .dot { background:#5bd66b; box-shadow:0 0 10px #5bd66b; }
   .big { font-size:28vw; line-height:.9; font-weight:800; font-variant-numeric:tabular-nums; }
   @media(min-width:520px){ .big{ font-size:140px; } }
+  @media (prefers-reduced-motion: no-preference){
+    .big.pop { animation:pop .5s ease-out; }
+    @keyframes pop { 0%{ transform:scale(1); text-shadow:none; }
+      30%{ transform:scale(1.14); text-shadow:0 0 42px rgba(211,242,75,.85); }
+      100%{ transform:scale(1); text-shadow:none; } }
+  }
+  .tiles { display:grid; grid-template-columns:repeat(4,1fr); gap:8px; margin:14px 0 4px; }
+  .tile { background:var(--panel); border:1px solid var(--line); border-radius:10px;
+    padding:10px 4px 8px; text-align:center; }
+  .tile .tn { font-size:1.5rem; font-weight:800; font-variant-numeric:tabular-nums; }
+  .tile .tl { font-size:.58rem; letter-spacing:.12em; text-transform:uppercase;
+    color:var(--muted); margin-top:2px; }
+  .tile.down .tn { color:#aab4bd; }
+  .tile.precision .tn { color:var(--accent); }
+  .tile.finisher .tn { color:#f5a623; }
+  .tile.assist .tn { color:#37cabb; }
   .accent { color:var(--accent); }
   .lab { color:var(--muted); font-size:.68rem; letter-spacing:.14em; text-transform:uppercase; margin-top:8px; }
   .sub { color:var(--muted); font-size:.82rem; margin:4px 0 16px; }
@@ -392,8 +431,15 @@ PAGE = """<!doctype html><html lang="en"><head><meta charset="utf-8">
   <div class="status" id="status"><span class="dot"></span><span id="statustext">CONNECTING</span></div>
   <div><div class="big accent" id="count">0</div><div class="lab">Kills</div></div>
   <div class="sub" id="sub">&nbsp;</div>
+  <div class="tiles">
+    <div class="tile down"><div class="tn" id="t_down">0</div><div class="tl">Downs</div></div>
+    <div class="tile precision"><div class="tn" id="t_precision">0</div><div class="tl">Precision</div></div>
+    <div class="tile finisher"><div class="tn" id="t_finisher">0</div><div class="tl">Finishers</div></div>
+    <div class="tile assist"><div class="tn" id="t_assist">0</div><div class="tl">Assists</div></div>
+  </div>
   <div class="btnrow">
     <button class="clipbtn" id="clip" onclick="saveClip()">SAVE CLIP</button>
+    <button class="clipbtn" id="addk" onclick="addKill()">+1 KILL</button>
   </div>
   <div class="btnrow">
     <button class="fsbtn" id="snd" onclick="toggleSound()">SOUND: ON</button>
@@ -451,13 +497,19 @@ PAGE = """<!doctype html><html lang="en"><head><meta charset="utf-8">
     try{
       var r = await fetch('/status',{cache:'no-store'});
       var d = await r.json();
-      if (d.count > lastCount && lastCount >= 0) ding();
+      if (d.count > lastCount && lastCount >= 0){ ding(); flashCount(); }
       lastCount = d.count;
       document.getElementById('count').textContent = d.count;
+      var tags = d.tags || {};
+      ['down','precision','finisher','assist'].forEach(function(t){
+        document.getElementById('t_'+t).textContent = tags[t] || 0;
+      });
       var st = document.querySelector('.status');
       st.className = 'status' + (d.running ? ' live' : '');
       document.getElementById('statustext').textContent = d.running ? 'RUNNING' : 'STOPPED';
-      document.getElementById('sub').textContent = d.started ? 'started '+d.started : '\\u00a0';
+      document.getElementById('sub').textContent =
+        d.running && d.elapsed ? 'session ' + fmtElapsed(d.elapsed) + ' \\u00b7 started ' + d.started
+        : (d.started ? 'started ' + d.started : '\\u00a0');
       var feed = document.getElementById('feed');
       if(!d.events.length){ feed.innerHTML = '<div class="empty">Waiting for kills...</div>'; }
       else {
@@ -611,6 +663,26 @@ PAGE = """<!doctype html><html lang="en"><head><meta charset="utf-8">
     btn.classList.add('fired');
     try { await fetch('/clip', {method:'POST'}); } catch(e){}
     setTimeout(function(){ btn.textContent='SAVE CLIP'; btn.classList.remove('fired'); }, 1500);
+  }
+
+  async function addKill(){
+    var btn = document.getElementById('addk');
+    btn.textContent = 'COUNTED';
+    btn.classList.add('fired');
+    try { await fetch('/addkill', {method:'POST'}); } catch(e){}
+    setTimeout(function(){ btn.textContent='+1 KILL'; btn.classList.remove('fired'); }, 1500);
+  }
+
+  function flashCount(){
+    var el = document.getElementById('count');
+    el.classList.remove('pop'); void el.offsetWidth;  // restart the animation
+    el.classList.add('pop');
+  }
+
+  function fmtElapsed(s){
+    var h = Math.floor(s/3600), m = Math.floor((s%3600)/60), sec = s%60;
+    var mm = (h ? String(m).padStart(2,'0') : m) + ':' + String(sec).padStart(2,'0');
+    return h ? h + ':' + mm : mm;
   }
 
   // Keep the screen awake. The Wake Lock API only works on secure pages
