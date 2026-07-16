@@ -24,6 +24,10 @@ obsws-python>=1.6
 # Match cards, reel title/POTG cards, shorts labels
 Pillow>=10.0
 
+# Human-sounding announcer voice for reels (Microsoft neural TTS; needs
+# internet at reel-build time — falls back to the offline voice without it)
+edge-tts>=7.0
+
 # Optional: system-tray skull icon (run with --tray).
 pystray>=0.19
 

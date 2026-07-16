@@ -163,6 +163,14 @@ capture_exfil_stats: true
 # + that match's clips) into <session>/reels/ and pop it up on the iPad
 # dashboard for instant rewatching.
 make_match_reels: true
+
+# Announcer voice for the "(announced)" reel. Human-sounding Microsoft neural
+# voice (needs internet while the reel builds; falls back to the offline
+# robotic voice without it). Try en-US-ChristopherNeural, en-GB-RyanNeural...
+# Full list: .venv\Scripts\python -m edge_tts --list-voices
+announcer_voice: "en-US-GuyNeural"
+# How the announcer says your name (phonetic). Empty = "our runner".
+announcer_player_name: "Mister Viz Nasty"
 reel_music_volume: 0.08   # 0-1 loudness of the music bed under the game audio
                           # (0.08 = quiet background; 0 = off, 0.22 = old level)
 

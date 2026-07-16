@@ -760,9 +760,15 @@ def _build_match_reel_async(cfg, s, session_dir, stats_d):
                                       duration_ms=2000, rise=False)
                 if cfg.get("reel_announcer", True):
                     import announcer
+                    potg = match_reel.pick_potg(match_reel._normalize_clips(clips))
+                    script = announcer.stat_line(
+                        total_kills, stats_d,
+                        potg_tag=(potg["tag"] if potg else ""),
+                        player=cfg.get("announcer_player_name", ""))
                     wav = announcer.synth_to_wav(
-                        announcer.stat_line(total_kills, stats_d),
-                        os.path.join(session_dir, "reels", f"match_{match_num}_tts.wav"))
+                        script,
+                        os.path.join(session_dir, "reels", f"match_{match_num}_tts.wav"),
+                        voice=cfg.get("announcer_voice", announcer.DEFAULT_VOICE))
                     if wav:
                         aout = os.path.join(session_dir, "reels",
                                             f"match_{match_num}_announced.mp4")
