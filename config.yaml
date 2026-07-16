@@ -144,7 +144,13 @@ overlay_reel_ready: true   # "HIGHLIGHTS READY" when the match reel finishes
 
 # Halo-style announcer VOICE shouting "Double kill!" etc. when kills land
 # together (uses announcer_voice; rendered once per voice, then works offline).
+# NOTE: a down + its finisher is ONE kill — multikills need multiple DOWNS.
 announcer_medals: true
+
+# TEAM WIPE banner + call-out: three distinct enemy deaths (elim/finisher
+# popups, yours or assists) within ~2 minutes — in trios that's the squad.
+team_wipe: true
+team_wipe_size: 3      # deaths that make a wipe (2 for duos)
 
 # --- Clips + recap ---
 organize_clips: true   # rename each saved clip by event+time and sort into a

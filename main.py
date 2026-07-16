@@ -366,6 +366,24 @@ def show_text_overlay(cfg, text, size=60, position="custom:0.5,0.42",
 MULTIKILL_NAMES = {2: "DOUBLE KILL", 3: "TRIPLE KILL", 4: "QUAD KILL"}
 
 
+def register_elim(elim_times: list, now: float, wipe_size: int = 3,
+                  window: float = 120.0, burst: float = 5.0) -> bool:
+    """Track enemy DEATHS toward a team wipe. One death often fires several
+    popups at once (RUNNER ELIM + FINISHER in the same moment), so events
+    within `burst` seconds collapse into a single death. Returns True when
+    `wipe_size` distinct deaths land inside `window` — the squad is gone.
+    Mutates elim_times in place (cleared on a wipe)."""
+    if elim_times and now - elim_times[-1] < burst:
+        return False                      # same death, different popup
+    elim_times.append(now)
+    while elim_times and now - elim_times[0] > window:
+        elim_times.pop(0)
+    if len(elim_times) >= wipe_size:
+        elim_times.clear()
+        return True
+    return False
+
+
 def log_kill(cfg: dict, event, count: int) -> None:
     path = os.path.join(os.path.dirname(CONFIG_PATH), cfg.get("session_log", "session_log.csv"))
     new_file = not os.path.exists(path)
@@ -642,20 +660,23 @@ def _flush_coalesce(s):
     combo_tag = "+".join(dict.fromkeys(tags))  # e.g. "down+finisher", deduped, order-preserving
     label = ",".join(str(c) for c in counts)
     print(f"  [coalesce] saving clip for kill(s) #{label} [{combo_tag}]")
-    if len(counts) >= 2:
+    # A multikill means multiple DISTINCT downs — a down followed by the
+    # finisher on the same runner is ONE kill, not a double.
+    n_downs = sum(1 for t in tags if t in ("down", "precision"))
+    if n_downs >= 2:
         if s["cfg"].get("overlay_multikill", True):
             show_text_overlay(s["cfg"],
-                              MULTIKILL_NAMES.get(len(counts), "MULTI KILL"),
+                              MULTIKILL_NAMES.get(n_downs, "MULTI KILL"),
                               size=64, position="custom:0.5,0.40", duration_ms=1700)
         if s["cfg"].get("announcer_medals", True):
             import announcer
-            announcer.play_medal(s["medal_sounds"], len(counts))
+            announcer.play_medal(s["medal_sounds"], n_downs)
     if s["obs"].save_replay():
         s["last_save"] = time.monotonic()
         if s["organize"]:
             rename_clip_async(s["obs"], s["session_id"], combo_tag, counts[0],
                               on_done=_clip_ready_callback(s, combo_tag, counts[0],
-                                                           kills=len(counts)))
+                                                           kills=max(1, n_downs)))
     s["_coalesce_pending"] = []
     s["_coalesce_deadline"] = 0.0
 
@@ -676,6 +697,22 @@ def _handle_kill(cfg, ev, s, on_count=None):
     s["session_tags"].append(tag)
     s.setdefault("match_tags", []).append(tag)  # reset each exfil for the audit
     print(f"KILL #{count} [{tag}]: {ev.raw_line!r}")
+
+    # Team wipe: an enemy DEATH shows an ELIM or FINISHER popup (yours or an
+    # assist). Three distinct deaths in a couple of minutes = squad wiped —
+    # in trios you're almost always fighting exactly one team.
+    raw_low = ev.raw_line.lower()
+    if cfg.get("team_wipe", True) and ("elim" in raw_low or "finisher" in raw_low):
+        if register_elim(s.setdefault("elim_times", []), now,
+                         wipe_size=int(cfg.get("team_wipe_size", 3))):
+            print("  -> TEAM WIPE")
+            if cfg.get("show_overlays", True):
+                show_text_overlay(cfg, "TEAM WIPE", size=72,
+                                  position="custom:0.5,0.36",
+                                  color="#ff4d3d", duration_ms=2200)
+            if cfg.get("announcer_medals", True):
+                import announcer
+                announcer.play_medal(s["medal_sounds"], "wipe")
     play_kill_sound(cfg)
     s["obs"].set_counter(count)
     if on_count is not None:

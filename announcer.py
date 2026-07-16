@@ -98,6 +98,7 @@ MEDALS = {
     3: ("triple_kill", "Triple kill!"),
     4: ("quad_kill", "Quadra kill!"),
     5: ("multi_kill", "Multi kill!"),   # 5+ all use this one
+    "wipe": ("team_wipe", "Team wipe!"),
 }
 
 
@@ -137,9 +138,10 @@ def ensure_medal_sounds(base_dir: str, voice: str, ffmpeg: str) -> dict:
     return out
 
 
-def play_medal(medal_sounds: dict, kill_count: int) -> None:
-    """Fire-and-forget playback of the right call-out (async, never blocks)."""
-    wav = medal_sounds.get(kill_count) or medal_sounds.get(5)
+def play_medal(medal_sounds: dict, key) -> None:
+    """Fire-and-forget playback of the right call-out (async, never blocks).
+    key: a kill count (2/3/4, 5+ falls back to multi) or 'wipe'."""
+    wav = medal_sounds.get(key) or (medal_sounds.get(5) if key != "wipe" else None)
     if not wav or not os.path.exists(wav):
         return
     try:

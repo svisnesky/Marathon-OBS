@@ -23,6 +23,7 @@ SETTINGS = {
     "overlay_clip_saved": (True, bool),     # CLIP SAVED chip
     "overlay_reel_ready": (True, bool),     # HIGHLIGHTS READY chip
     "announcer_medals": (True, bool),       # voiced "Double kill!" call-outs
+    "team_wipe": (True, bool),              # TEAM WIPE banner + call-out
     "kill_coalesce_seconds": (8.0, float),  # group kills into one clip window
     "make_match_reels": (True, bool),
     "reel_music": (True, bool),
@@ -42,6 +43,7 @@ SETTINGS_META = [
     ("overlay_clip_saved", "CLIP SAVED chip"),
     ("overlay_reel_ready", "HIGHLIGHTS READY chip"),
     ("announcer_medals", "Medal call-outs (voice)"),
+    ("team_wipe", "TEAM WIPE banner + voice"),
     ("kill_coalesce_seconds", "Group kills within (seconds)"),
     ("make_match_reels", "Match highlight reels"),
     ("reel_music", "Reel music bed"),
