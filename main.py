@@ -22,7 +22,7 @@ from collections import Counter
 
 import yaml
 
-from detector import KillDetector, PopupDetector
+from detector import PopupDetector
 
 CONFIG_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "config.yaml")
 
@@ -125,47 +125,31 @@ def save_setting_overrides(changes: dict) -> None:
 
 
 def build_detector(cfg: dict):
-    """Return (detector, mode). mode is 'popup', 'killfeed', or 'audio'."""
+    """Popup detection is the one mode that works for Marathon (the kill feed
+    uses icons; audio and template matching were tried and retired).
+    NOTE: defaults here must mirror config.yaml's tuned values — existing
+    installs keep their own config.yaml across updates, so behavior changes
+    ship as these code defaults."""
     mode = cfg.get("detection_mode", "popup")
-    if mode == "popup":
-        # NOTE: defaults here must mirror config.yaml's tuned values — existing
-        # installs keep their own config.yaml across updates, so behavior
-        # changes ship as these code defaults.
-        det = PopupDetector(
-            trigger_phrases=cfg.get("popup_trigger_phrases",
-                                    ["RUNNER DOWN", "PRECISION DOWN",
-                                     "FINISHER", "RUNNER ELIM"]),
-            phrase_match_threshold=cfg.get("popup_match_threshold", 85),
-            absence_frames=cfg.get("popup_absence_frames", 3),
-            confirm_frames=cfg.get("popup_confirm_frames", 1),
-            require_reward=cfg.get("require_reward", True),
-            cooldown_seconds=cfg.get("popup_cooldown_seconds", 2.0),
-        )
-    elif mode == "killfeed":
-        det = KillDetector(
-            player_name=cfg["player_name"],
-            name_aliases=cfg.get("name_aliases"),
-            trigger_keywords=cfg.get("trigger_keywords"),
-            match_mode=cfg.get("match_mode", "self_or_assist"),
-            name_match_threshold=cfg.get("name_match_threshold", 82),
-            dedup_ttl_seconds=cfg.get("dedup_ttl_seconds", 8.0),
-        )
-    elif mode == "audio":
-        return None, "audio"  # AudioDetector is built separately in run_live
-    elif mode == "template":
-        return None, "template"  # ImageDetector is built separately in run_live
-    else:
-        raise ValueError(f"Unknown detection_mode: {mode!r} "
-                         "(use 'popup', 'killfeed', 'audio', or 'template')")
-    return det, mode
+    if mode != "popup":
+        print(f"(detection_mode {mode!r} was retired — using popup detection)")
+    det = PopupDetector(
+        trigger_phrases=cfg.get("popup_trigger_phrases",
+                                ["RUNNER DOWN", "PRECISION DOWN",
+                                 "FINISHER", "RUNNER ELIM"]),
+        phrase_match_threshold=cfg.get("popup_match_threshold", 85),
+        absence_frames=cfg.get("popup_absence_frames", 3),
+        confirm_frames=cfg.get("popup_confirm_frames", 1),
+        require_reward=cfg.get("require_reward", True),
+        cooldown_seconds=cfg.get("popup_cooldown_seconds", 2.0),
+    )
+    return det, "popup"
 
 
 def detect_events(det, mode: str, lines, now: float) -> list:
-    """Uniform interface over both detectors -> list of KillEvents for this frame."""
-    if mode == "popup":
-        ev = det.process_frame(lines, now)
-        return [ev] if ev else []
-    return det.process_lines(lines, now)
+    """Detector interface -> list of KillEvents for this frame."""
+    ev = det.process_frame(lines, now)
+    return [ev] if ev else []
 
 
 def play_kill_sound(cfg: dict) -> None:
@@ -529,7 +513,7 @@ def _ensure_obs_running(cfg) -> None:
 
 
 def _setup_session(cfg, dry_run):
-    """Common session setup shared by OCR and audio run modes. Returns a dict
+    """Session setup. Returns a dict
     of session state (obs, web, counters, etc.)."""
     from obs_client import OBSClient, DryRunOBS
 
@@ -885,18 +869,6 @@ def _check_manual_clip(s):
             print("  [manual clip: too soon after last save]")
 
 
-def _classify_audio_event(tag: str) -> str:
-    """Map an audio reference tag to the standard event classification."""
-    tag = tag.lower()
-    if "precision" in tag:
-        return "precision"
-    if "finisher" in tag:
-        return "finisher"
-    if "assist" in tag:
-        return "assist"
-    return "kill"
-
-
 def run_live(cfg: dict, dry_run: bool = False, stop_event=None, on_count=None):
     _install_session_log()
     try:
@@ -907,11 +879,6 @@ def run_live(cfg: dict, dry_run: bool = False, stop_event=None, on_count=None):
 
 def _run_live_inner(cfg: dict, dry_run: bool = False, stop_event=None, on_count=None):
     det, mode = build_detector(cfg)
-
-    if mode == "audio":
-        return _run_live_audio(cfg, dry_run, stop_event, on_count)
-    if mode == "template":
-        return _run_live_template(cfg, dry_run, stop_event, on_count)
 
     from capture import make_capture
     from ocr import OCREngine
@@ -980,201 +947,6 @@ def _run_live_inner(cfg: dict, dry_run: bool = False, stop_event=None, on_count=
                     time.sleep(interval - elapsed)
         except KeyboardInterrupt:
             pass
-
-    _flush_coalesce(s)
-    if s["web"] is not None:
-        s["web"].set_running(False)
-    _end_session(cfg, s["session_tags"], s["session_start"],
-                 s["session_start_wall"], dry_run, s["obs"], s["session_id"])
-
-
-def _run_live_audio(cfg: dict, dry_run: bool, stop_event, on_count):
-    """Audio-based detection loop. No screen capture or OCR — listens to game
-    audio via WASAPI loopback and matches kill sound effects."""
-    from audio_detector import AudioDetector
-
-    s = _setup_session(cfg, dry_run)
-
-    base = os.path.dirname(os.path.abspath(__file__))
-    sounds_dir = os.path.join(base, "sounds")
-    audio_cfg = cfg.get("audio", {})
-
-    # build reference map: check for per-type sounds, fall back to a single kill.wav
-    refs: dict[str, str] = {}
-    for tag in ("kill", "precision", "finisher", "assist"):
-        p = audio_cfg.get(f"{tag}_reference", os.path.join(sounds_dir, f"{tag}.wav"))
-        if os.path.isfile(p):
-            refs[tag] = p
-    if not refs:
-        print("ERROR: No reference sound files found in sounds/ folder.")
-        print("Run  python audio_calibrate.py  first to record the kill sound.")
-        return
-
-    debug = cfg.get("debug_audio", False)
-    detector = AudioDetector(
-        references=refs,
-        sample_rate=int(audio_cfg.get("sample_rate", 44100)),
-        threshold=float(audio_cfg.get("threshold", 0.40)),
-        cooldown=float(audio_cfg.get("cooldown", 2.0)),
-        buffer_seconds=float(audio_cfg.get("buffer_seconds", 3.0)),
-        check_interval=float(audio_cfg.get("check_interval", 0.15)),
-        device_name=audio_cfg.get("device_name", ""),
-        debug=debug,
-    )
-    detector.start()
-
-    print(f"Detecting [audio] via WASAPI loopback. "
-          f"References: {list(refs.keys())}. "
-          f"{'DRY-RUN' if dry_run else 'LIVE'}. Ctrl-C to stop.\n")
-
-    try:
-        while not (stop_event is not None and stop_event.is_set()):
-            events = detector.poll()
-            for ev in events:
-                tag = ev.raw_line.split(":")[1].split()[0] if ":" in ev.raw_line else "kill"
-                ev_tag = _classify_audio_event(tag)
-                original_raw = ev.raw_line
-                ev.raw_line = {"kill": "RUNNER DOWN", "precision": "PRECISION DOWN",
-                               "finisher": "FINISHER", "assist": "RUNNER ELIM"
-                               }.get(ev_tag, "RUNNER DOWN") + f"  ({original_raw})"
-                _handle_kill(cfg, ev, s, on_count)
-            _check_coalesce(s)
-            _check_manual_kill(cfg, s, on_count)
-            _check_manual_clip(s)
-            time.sleep(0.1)
-    except KeyboardInterrupt:
-        pass
-    finally:
-        detector.stop()
-
-    _flush_coalesce(s)
-    if s["web"] is not None:
-        s["web"].set_running(False)
-    _end_session(cfg, s["session_tags"], s["session_start"],
-                 s["session_start_wall"], dry_run, s["obs"], s["session_id"])
-
-
-def _run_live_template(cfg: dict, dry_run: bool, stop_event, on_count):
-    """Image-template detection loop. Captures the screen region like OCR mode
-    but matches template images instead of reading text. Much more robust to
-    OBS Virtual Camera compression."""
-    from capture import make_capture
-    from image_detector import ImageDetector, load_templates
-
-    _tune_performance(cfg)
-    s = _setup_session(cfg, dry_run)
-
-    base = os.path.dirname(os.path.abspath(__file__))
-    tmpl_dir = os.path.join(base, "templates")
-    tmpl_cfg = cfg.get("template", {})
-
-    scales_raw = tmpl_cfg.get("scales", [0.6, 0.75, 0.85, 1.0, 1.15, 1.3])
-    templates = load_templates(tmpl_dir, scales=tuple(float(x) for x in scales_raw))
-    if not templates:
-        print("ERROR: No template images found in templates/ folder.")
-        print("Add cropped PNG screenshots of the kill popups (e.g. runner_down.png, finisher.png).")
-        return
-
-    detector = ImageDetector(
-        templates=templates,
-        threshold=float(tmpl_cfg.get("threshold", 0.55)),
-        cooldown=float(tmpl_cfg.get("cooldown", 3.0)),
-        absence_frames=int(tmpl_cfg.get("absence_frames", 3)),
-        confirm_frames=int(tmpl_cfg.get("confirm_frames", 2)),
-        debug=cfg.get("debug_template", False),
-    )
-
-    poll_fps = max(1, cfg.get("poll_fps", 3))
-    interval = 1.0 / poll_fps
-
-    region = cfg.get("detect_region_frac") or cfg.get("detect_region")
-    print(f"Detecting [template] at {poll_fps} fps via {cfg.get('capture_source')}. "
-          f"Region={region}. Templates: {[t.tag for t in templates]}. "
-          f"{'DRY-RUN' if dry_run else 'LIVE'}. Ctrl-C to stop.\n")
-
-    # Template mode uses the FULL frame (not the cropped OCR region) because
-    # the template itself is the search pattern — matchTemplate finds it
-    # wherever it appears. Build a full-frame capture instead.
-    src = cfg.get("capture_source", "obs_virtualcam")
-    if src == "obs_virtualcam":
-        import cv2
-        cam_idx = cfg.get("obs_virtualcam_index", 0)
-        backend = getattr(cv2, "CAP_DSHOW", 0)
-        cap = cv2.VideoCapture(cam_idx, backend)
-        if not cap.isOpened():
-            print(f"ERROR: Could not open OBS Virtual Camera (index {cam_idx}).")
-            print("Is 'Start Virtual Camera' running in OBS?")
-            return
-        cap.set(cv2.CAP_PROP_FRAME_WIDTH, 1920)
-        cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 1080)
-
-        def grab_full():
-            ok, frame = cap.read()
-            if not ok or frame is None:
-                return None
-            return frame
-
-        def release():
-            cap.release()
-    else:
-        import mss
-        import numpy as np
-        sct = mss.mss()
-        mons = sct.monitors
-        mi = cfg.get("monitor_index", 1)
-        mon = mons[mi] if mi < len(mons) else mons[0]
-
-        def grab_full():
-            raw = sct.grab(mon)
-            return np.asarray(raw)[:, :, :3]
-
-        def release():
-            sct.close()
-
-    logged_size = False
-    null_frames = 0
-    try:
-        while not (stop_event is not None and stop_event.is_set()):
-            loop_start = time.monotonic()
-            img = grab_full()
-            if img is None:
-                null_frames += 1
-                if null_frames == 10:
-                    print("  [template] WARNING: 10 null frames in a row — virtual cam may not be working")
-                time.sleep(0.1)
-                continue
-
-            if not logged_size:
-                h, w = img.shape[:2]
-                ch = img.shape[2] if len(img.shape) == 3 else 1
-                print(f"  [template] frame size: {w}x{h} channels={ch}")
-                for t in templates:
-                    for i, sc in enumerate(t.scales):
-                        sh, sw = sc.shape[:2]
-                        fits = "OK" if sw <= w and sh <= h else "TOO BIG"
-                        print(f"  [template] {t.tag} scale[{i}]: {sw}x{sh} {fits}")
-                debug_path = os.path.join(base, "debug_frame.png")
-                import cv2 as _cv2
-                _cv2.imwrite(debug_path, img)
-                print(f"  [template] saved first frame to {debug_path}")
-                logged_size = True
-
-            events = detector.process_frame(img, now=loop_start)
-
-            for ev in events:
-                _handle_kill(cfg, ev, s, on_count)
-
-            _check_coalesce(s)
-            _check_manual_kill(cfg, s, on_count)
-            _check_manual_clip(s)
-
-            elapsed = time.monotonic() - loop_start
-            if elapsed < interval:
-                time.sleep(interval - elapsed)
-    except KeyboardInterrupt:
-        pass
-    finally:
-        release()
 
     _flush_coalesce(s)
     if s["web"] is not None:

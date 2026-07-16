@@ -6,13 +6,11 @@
 auto_update: true
 
 # =========================================================================
-# DETECTION MODE
-#   popup    -> (recommended) watch the center-screen personal confirmation
-#               popup that appears only when YOU get a down, e.g.
-#               "RUNNER DOWN  +15 XP". No name matching needed.
-#   killfeed -> parse the bottom kill feed "<killer> <verb> <victim>" and match
-#               your name. Only useful if the feed uses a real word (Marathon's
-#               feed uses icons, so popup mode is preferred).
+# DETECTION
+#   Watches the center-screen personal reward popup that appears only when
+#   YOU get a down/kill (e.g. "RUNNER DOWN +15 XP") and OCRs it. This is the
+#   one approach that works for Marathon; audio + template matching were
+#   tried and retired.
 # =========================================================================
 detection_mode: "popup"
 
@@ -49,15 +47,6 @@ suppress_phrases:
 # positives (that text has no reward). Set false only if it misses real kills.
 require_reward: true
 
-# --- KILLFEED MODE settings (only used when detection_mode: killfeed) ---
-player_name: "MRVIZNASTY"    # your exact in-game display name
-name_aliases:
-  - "MRVIZNASTY"
-match_mode: "self_or_assist" # self_or_assist | self_only
-trigger_keywords:
-  - "downed"
-name_match_threshold: 82
-
 # =========================================================================
 # CAPTURE SOURCE
 #   obs_virtualcam -> read OBS's Virtual Camera (recommended: OBS captures the
@@ -92,7 +81,6 @@ poll_fps: 5                 # frames/sec to capture + OCR. Higher = more chances
                             # catch a fast popup with a clean read (matters on CPU
                             # OCR). Lower if it hurts game FPS.
 ocr_threads: 2              # max CPU threads OCR may use (leaves cores for the game)
-dedup_ttl_seconds: 8.0      # killfeed mode: remember a matched line this long
 min_save_interval_seconds: 2.0  # floor between OBS replay saves (avoid clip spam)
 kill_coalesce_seconds: 8.0  # after a kill, wait this long for more kills before
                             # saving one clip (groups down+finisher into one clip)
@@ -208,50 +196,6 @@ web_lan: true          # true = reachable from devices on your Wi-Fi (the iPad).
                        # network can see stats and press its buttons. On a home
                        # network that's fine; on shared/public Wi-Fi set false
                        # (this PC only).
-
-# =========================================================================
-# AUDIO MODE settings (only used when detection_mode: audio)
-#   Listens to your game audio via WASAPI loopback and matches kill sound
-#   effects. No screen capture, no OCR, no resolution dependency.
-#   Run  python audio_calibrate.py  first to record reference sounds.
-# =========================================================================
-audio:
-  threshold: 0.40       # 0-1 correlation score to count as a match (lower = more sensitive)
-  cooldown: 3.5         # seconds between detections (must be >= buffer_seconds to prevent re-triggers)
-  buffer_seconds: 3.0   # rolling audio buffer length
-  check_interval: 0.15  # seconds between match checks (lower = more responsive, more CPU)
-  sample_rate: 44100
-  device_name: ""       # leave empty for default speakers; set to match a specific device name
-
-# =========================================================================
-# TEMPLATE MODE settings (only used when detection_mode: template)
-#   Matches cropped PNG screenshots of kill popups against the captured
-#   frame using image template matching (NCC). No OCR needed.
-#   Place template PNGs in the templates/ folder.
-# =========================================================================
-template:
-  threshold: 0.60       # 0-1 NCC score to count as a match (lower = more sensitive)
-  cooldown: 3.0         # seconds between detections (global)
-  absence_frames: 3     # popup must vanish this many frames before it can re-fire
-  confirm_frames: 2     # popup must appear this many frames in a row to count
-  scales:               # multi-scale matching (handles resolution differences)
-    - 0.5
-    - 0.75
-    - 1.0
-    - 1.25
-    - 1.5
-    - 1.75
-    - 2.0
-    - 2.5
-
-# Set true to print template match scores every frame (like debug_ocr but for templates)
-# Set true to print every OCR read each frame (helps diagnose missed kills)
-debug_ocr: true
-
-debug_template: false
-
-# Set true to print audio match scores every check (like debug_ocr but for audio)
-debug_audio: false
 
 # --- Logging ---
 session_log: "session_log.csv"

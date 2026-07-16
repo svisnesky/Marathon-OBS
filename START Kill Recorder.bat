@@ -1,6 +1,6 @@
 @echo off
 REM The real thing: saves an OBS clip and bumps the counter on every kill.
-REM Make sure OBS is open with Replay Buffer + Virtual Camera running.
+REM See QUICKSTART.md for first-time setup.
 call "%~dp0_env.bat"
 if errorlevel 1 exit /b 1
 echo.

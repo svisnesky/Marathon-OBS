@@ -1,17 +1,9 @@
 """Detection logic — the brain of the tool, fully unit-testable without OBS/Windows.
 
-Two detectors, chosen by `detection_mode` in config:
-
-  PopupDetector (recommended, default):
-      Watches the center-screen personal confirmation popup that appears ONLY
-      when you get a down, e.g. "RUNNER DOWN  +15 XP". Because it's your own
-      reward popup, no name matching is needed. Edge-triggered: fires once each
-      time the popup appears, then re-arms after it disappears.
-
-  KillDetector (fallback):
-      Parses the kill feed "<killer> <verb> <victim>" and fuzzy-matches your
-      name. Useful only if the game exposes a text kill feed with a matchable
-      verb. (Marathon's feed uses icons, not words, so popup mode is preferred.)
+PopupDetector watches the center-screen personal confirmation popup that
+appears ONLY when you get a down, e.g. "RUNNER DOWN  +15 XP". Because it's
+your own reward popup, no name matching is needed. Edge-triggered: fires once
+each time the popup appears, then re-arms after it disappears.
 """
 
 from __future__ import annotations
@@ -53,122 +45,6 @@ def phrase_matches(phrase_norm: str, blob_norm: str, threshold: int = 80) -> boo
     if len(blob_norm) < max(5, 0.6 * len(phrase_norm)):
         return False
     return fuzz.partial_ratio(phrase_norm, blob_norm) >= threshold
-
-
-class KillDetector:
-    def __init__(
-        self,
-        player_name: str,
-        name_aliases: Optional[Iterable[str]] = None,
-        trigger_keywords: Optional[Iterable[str]] = None,
-        match_mode: str = "self_or_assist",
-        name_match_threshold: int = 82,
-        dedup_ttl_seconds: float = 8.0,
-    ):
-        names = [player_name] + list(name_aliases or [])
-        self.names = [_normalize(n) for n in names if n and n.strip()]
-        self.keywords = [k.lower().strip() for k in (trigger_keywords or ["downed"])]
-        self.match_mode = match_mode
-        self.threshold = name_match_threshold
-        self.dedup_ttl = dedup_ttl_seconds
-        # normalized line -> last-seen timestamp
-        self._seen: dict[str, float] = {}
-
-    # --- name matching -------------------------------------------------------
-
-    def _name_in(self, text: str) -> bool:
-        """Fuzzy: does any of our names appear as a token/substring of `text`?"""
-        norm = _normalize(text)
-        if not norm:
-            return False
-        tokens = norm.split()
-        for name in self.names:
-            # exact substring is a fast, high-confidence path
-            if name and name in norm:
-                return True
-            # fuzzy per-token (handles OCR slips like "stao" -> "stan")
-            for tok in tokens:
-                if fuzz.ratio(name, tok) >= self.threshold:
-                    return True
-            # fuzzy against the whole side (handles multi-word names)
-            if fuzz.partial_ratio(name, norm) >= self.threshold:
-                return True
-        return False
-
-    # --- line parsing --------------------------------------------------------
-
-    def _split_on_keyword(self, line: str) -> Optional[tuple[str, str]]:
-        """Return (killer_side, victim_side) if a trigger keyword is present."""
-        low = line.lower()
-        for kw in self.keywords:
-            # word-ish boundary so "downedown" doesn't match "downed"
-            m = re.search(r"(?<![a-z])" + re.escape(kw) + r"(?![a-z])", low)
-            if m:
-                return line[: m.start()].strip(), line[m.end():].strip()
-        return None
-
-    # --- dedup ---------------------------------------------------------------
-
-    def _prune(self, now: float) -> None:
-        expired = [k for k, t in self._seen.items() if now - t > self.dedup_ttl]
-        for k in expired:
-            del self._seen[k]
-
-    def _is_new(self, line: str, now: float) -> bool:
-        key = _normalize(line)
-        if not key:
-            return False
-        self._prune(now)
-        if key in self._seen:
-            self._seen[key] = now   # refresh so a still-visible line keeps its TTL
-            return False
-        self._seen[key] = now
-        return True
-
-    # --- public API ----------------------------------------------------------
-
-    def process_line(self, line: str, now: float) -> Optional[KillEvent]:
-        """Evaluate a single OCR line; return a KillEvent if it's a NEW kill of ours."""
-        parts = self._split_on_keyword(line)
-        if not parts:
-            return None
-        killer_side, victim_side = parts
-
-        is_self_kill = self._name_in(killer_side)
-        # The victim is the immediate name after the verb; anything in trailing
-        # brackets like "(assist: You)" is NOT the victim.
-        victim_primary = re.split(r"[(\[]", victim_side)[0].strip()
-        victim_is_me = self._name_in(victim_primary)
-
-        # If YOU are the victim, this is your death — never a kill of yours.
-        if victim_is_me and not is_self_kill:
-            return None
-
-        if self.match_mode == "self_only":
-            matched = is_self_kill
-        else:  # self_or_assist: your name anywhere on the line (but not as victim)
-            matched = is_self_kill or self._name_in(line)
-
-        if not matched:
-            return None
-        if not self._is_new(line, now):
-            return None
-
-        return KillEvent(
-            timestamp=now,
-            raw_line=line.strip(),
-            killer=killer_side,
-            victim=victim_side,
-            is_self_kill=is_self_kill,
-        )
-
-    def process_lines(self, lines: Iterable[str], now: float) -> list[KillEvent]:
-        events = []
-        for line in lines:
-            ev = self.process_line(line, now)
-            if ev:
-                events.append(ev)
-        return events
 
 
 class PopupDetector:

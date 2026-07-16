@@ -198,7 +198,7 @@ allows ~6 uploads/day, and this uploads once per session, so you're fine.
 |------|------|
 | `config.yaml` | all settings (documented defaults) |
 | `main.py` | wires everything together; test/dry-run modes |
-| `detector.py` | popup/killfeed detection logic |
+| `detector.py` | popup detection logic |
 | `ocr.py` / `capture.py` | OCR engines / screen + virtual-cam capture |
 | `obs_client.py` | obs-websocket: save replay, counter, record dir |
 | `webserver.py` | iPad dashboard (feed, replays, reels, settings, help) |
