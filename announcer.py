@@ -99,12 +99,22 @@ def _mac_say(text: str, out_wav: str) -> str | None:
 
 
 MEDALS = {
-    2: ("double_kill", "Double kill!"),
-    3: ("triple_kill", "Triple kill!"),
-    4: ("quad_kill", "Quadra kill!"),
-    5: ("multi_kill", "Multi kill!"),   # 5+ all use this one
-    "wipe": ("team_wipe", "Team wipe!"),
+    2: ("double_kill", "DOUBLE KILL!"),
+    3: ("triple_kill", "TRIPLE KILL!"),
+    4: ("quad_kill", "QUADRA KILL!"),
+    5: ("multi_kill", "MULTI KILL!"),   # 5+ all use this one
+    "wipe": ("team_wipe", "TEAM WIPE!"),
 }
+
+# The "arena" treatment: punch compression, bass weight, a short stadium
+# echo, and a limiter — the difference between spoken-into-a-mic and
+# shouted-over-the-map. Applied when medals render.
+ARENA_FX = ("volume=2.0,"
+            "acompressor=threshold=-20dB:ratio=4:attack=3:release=140:makeup=4dB,"
+            "bass=g=5:f=110,treble=g=2:f=4000,"
+            "aecho=0.8:0.55:70|130:0.28|0.16,"
+            "alimiter=limit=0.95")
+_MEDAL_CACHE_VER = "arena1"   # bump to force a re-render of cached medals
 
 
 def ensure_medal_sounds(base_dir: str, voice: str, ffmpeg: str,
@@ -112,7 +122,8 @@ def ensure_medal_sounds(base_dir: str, voice: str, ffmpeg: str,
     """Pre-render the medal call-outs ('Double kill!' ...) so playback is
     instant mid-game. Cached per voice under cache_medals/ — after the first
     render they work offline forever. Returns {kill_count: wav_path}."""
-    safe_voice = "".join(c for c in f"{voice}{pitch}" if c.isalnum() or c in "-_")
+    safe_voice = "".join(c for c in f"{voice}{pitch}{_MEDAL_CACHE_VER}"
+                         if c.isalnum() or c in "-_")
     mdir = os.path.join(base_dir, "cache_medals", safe_voice)
     os.makedirs(mdir, exist_ok=True)
     out = {}
@@ -121,27 +132,46 @@ def ensure_medal_sounds(base_dir: str, voice: str, ffmpeg: str,
         if os.path.exists(wav):
             out[n] = wav
             continue
-        src = synth_to_wav(text, os.path.join(mdir, f"{name}_raw.wav"), voice, pitch)
+        src = _medal_shout(text, os.path.join(mdir, f"{name}_raw.mp3"), voice, pitch)
+        if not src:
+            # neural unavailable: plain offline synth, still arena-processed
+            src = synth_to_wav(text, os.path.join(mdir, f"{name}_raw.wav"), voice, pitch)
         if not src:
             continue
-        if src.endswith(".wav"):
-            os.replace(src, wav)
-        else:
-            # neural output is mp3; winsound needs wav
-            r = subprocess.run([ffmpeg, "-y", "-i", src, "-ar", "48000", wav],
-                               capture_output=True, text=True,
-                               creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
-            try:
-                os.remove(src)
-            except OSError:
-                pass
-            if r.returncode != 0:
-                continue
-        if os.path.exists(wav):
+        # convert + apply the arena treatment in one ffmpeg pass
+        r = subprocess.run([ffmpeg, "-y", "-i", src, "-af", ARENA_FX,
+                            "-ar", "48000", wav],
+                           capture_output=True, text=True,
+                           creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
+        try:
+            os.remove(src)
+        except OSError:
+            pass
+        if r.returncode == 0 and os.path.exists(wav):
             out[n] = wav
     if out:
         print(f"  [medals] {len(out)} call-outs ready ({voice})")
     return out
+
+
+def _medal_shout(text: str, out_mp3: str, voice: str, pitch: str) -> str | None:
+    """Neural render tuned for a SHOUT: faster and louder than narration."""
+    try:
+        import asyncio
+
+        import edge_tts
+    except ImportError:
+        return None
+    try:
+        async def go():
+            await edge_tts.Communicate(text, voice, rate="+15%", pitch=pitch,
+                                       volume="+40%").save(out_mp3)
+        asyncio.run(asyncio.wait_for(go(), timeout=25))
+        if os.path.exists(out_mp3) and os.path.getsize(out_mp3) > 1000:
+            return out_mp3
+    except Exception:
+        pass
+    return None
 
 
 def play_medal(medal_sounds: dict, key) -> None:
