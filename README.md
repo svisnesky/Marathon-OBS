@@ -93,8 +93,9 @@ Worth knowing before you run someone else's recorder:
 - Windows PC (the game machine). NVIDIA GPU recommended for EasyOCR.
 - **OBS 28+** (ships with obs-websocket v5).
 - **Python 3.9+**.
-- **ffmpeg** for reels/shorts/montage: drop `ffmpeg.exe` in the app folder or
-  have it on PATH.
+- **[ffmpeg](https://www.gyan.dev/ffmpeg/builds/ffmpeg-release-essentials.zip)**
+  for reels/shorts/montage: drop `ffmpeg.exe` (and `ffprobe.exe`) in the app
+  folder or have it on PATH.
 
 ## Performance — will my PC handle it?
 

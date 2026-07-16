@@ -6,21 +6,29 @@ it's "open the app, press START" forever (the app keeps itself updated).
 ## What you need
 
 - Windows PC that runs Marathon (NVIDIA GPU recommended)
-- [OBS Studio](https://obsproject.com/) (free)
-- [Python 3.12](https://www.python.org/downloads/windows/) — during install,
+- [OBS Studio](https://obsproject.com/download) (free)
+- [Python 3.12](https://www.python.org/downloads/release/python-31210/) —
+  scroll down, grab **Windows installer (64-bit)**, and during install
   **check the box "Add python.exe to PATH"**
+- [ffmpeg](https://www.gyan.dev/ffmpeg/builds/ffmpeg-release-essentials.zip)
+  (free) — powers the highlight reels and Shorts; setup step 3 below says
+  where it goes
 
 ## Setup (once)
 
-1. **Download this project**: green **Code** button above → **Download ZIP** →
-   unzip anywhere (e.g. Documents).
+1. **Download this project**: [direct ZIP link](https://github.com/svisnesky/Marathon-OBS/archive/refs/heads/main.zip)
+   (or the green **Code** button above → **Download ZIP**) → unzip anywhere
+   (e.g. Documents).
 2. **Set up OBS** (2 minutes):
    - *Settings → Output → Replay Buffer*: enable it, set to ~35 seconds.
    - *Tools → WebSocket Server Settings*: check **Enable WebSocket server**.
      Either uncheck **Enable Authentication**, or copy the password into
      `config.yaml` (the `obs: password:` line).
    - Make sure a recording path is set (*Settings → Output → Recording*).
-3. **Run `START Kill Recorder (Window).bat`**. The first run installs
+3. **ffmpeg**: open the ffmpeg zip you downloaded, and copy **`bin\ffmpeg.exe`**
+   (plus `ffprobe.exe`) into the app folder next to `main.py`. Without it you
+   still get clips — just no highlight reels or Shorts.
+4. **Run `START Kill Recorder (Window).bat`**. The first run installs
    everything automatically (big download, several minutes — it detects an
    NVIDIA card and installs GPU acceleration by itself). Later runs start in
    seconds.
