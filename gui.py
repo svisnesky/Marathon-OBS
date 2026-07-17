@@ -45,7 +45,25 @@ class QueueWriter:
         pass
 
 
+RAIL_BG = "#0d1218"
+NAV_MUTED = "#8a90a0"
+
+TAG_LABEL = {
+    "precision": "PRECISION DOWN +25 XP",
+    "finisher": "FINISHER +50",
+    "down": "RUNNER DOWN +15 XP",
+    "kill": "RUNNER ELIM +10 XP",
+    "assist": "ASSIST +15 XP",
+    "manual": "MANUAL +1",
+}
+TAG_PILL = {"precision": ACCENT, "finisher": "#f5a623", "down": "#8a90a0",
+            "kill": "#8a90a0", "assist": "#37cabb", "manual": "#8a90a0"}
+
+
 class ControlPanel:
+    """WITNESS command center — rail + live main stage."""
+    DOT = "●"
+
     def __init__(self, root):
         self.root = root
         self.cfg = app.load_config()
@@ -54,27 +72,25 @@ class ControlPanel:
         self.worker = None
         self.running = False
         self.count = 0
+        self.tags = []                 # kill tags this session (for the tiles)
+        self.recent = []               # (hhmmss, tag) newest-last
+        self.latest = None             # (tag, hhmmss) for the LATEST CLIP card
+        self.session_start = None
         self._icon = None
+        self.dry = tk.BooleanVar(value=False)
         self._build()
         self.root.after(100, self._drain)
+        self._tick()
 
-    # --- layout --------------------------------------------------------------
-
-    DOT = "●"
+    # --- shell ---------------------------------------------------------------
 
     def _build(self):
         r = self.root
         r.title("WITNESS")
         r.configure(bg=BG)
-        r.geometry("560x500")
-        r.minsize(520, 470)
-
-        # header: badge + wordmark + tagline
-        head = tk.Frame(r, bg=BG)
-        head.pack(fill="x", padx=22, pady=(20, 12))
+        r.geometry("860x560")
+        r.minsize(760, 520)
         try:
-            self._icon = tk.PhotoImage(file=os.path.join(BASE, "witness_logo_small.png"))
-            tk.Label(head, image=self._icon, bg=BG).pack(side="left", padx=(0, 14))
             self._icon_full = tk.PhotoImage(file=os.path.join(BASE, "witness_logo.png"))
             r.iconphoto(True, self._icon_full)
             ico = os.path.join(BASE, "witness.ico")
@@ -82,121 +98,212 @@ class ControlPanel:
                 r.iconbitmap(ico)
         except Exception:
             pass
-        title = tk.Frame(head, bg=BG)
-        title.pack(side="left", anchor="w")
+
+        body = tk.Frame(r, bg=BG)
+        body.pack(fill="both", expand=True)
+        rail = tk.Frame(body, bg=RAIL_BG, width=196)
+        rail.pack(side="left", fill="y")
+        rail.pack_propagate(False)
+        self.main = tk.Frame(body, bg=BG)
+        self.main.pack(side="left", fill="both", expand=True)
+        self._build_rail(rail)
+        self._show_idle()
+        if UPDATE_MSG:
+            self._log(UPDATE_MSG)
+
+    def _build_rail(self, rail):
+        brand = tk.Frame(rail, bg=RAIL_BG)
+        brand.pack(fill="x", padx=18, pady=(20, 16))
         try:
-            self._wordmark = tk.PhotoImage(
-                file=os.path.join(BASE, "witness_wordmark_small.png"))
-            tk.Label(title, image=self._wordmark, bg=BG).pack(anchor="w")
+            self._icon = tk.PhotoImage(file=os.path.join(BASE, "witness_logo_small.png"))
+            tk.Label(brand, image=self._icon, bg=RAIL_BG).pack(side="left", padx=(0, 10))
         except Exception:
-            tk.Label(title, text="WITNESS", bg=BG, fg=ACCENT,
-                     font=("Segoe UI Black", 18, "bold")).pack(anchor="w")
-        tk.Label(title, text="IT SEES EVERYTHING", bg=BG, fg=MUTED,
-                 font=("Consolas", 9)).pack(anchor="w", pady=(3, 0))
+            pass
+        try:
+            self._wm = tk.PhotoImage(file=os.path.join(BASE, "witness_wordmark_small.png"))
+            tk.Label(brand, image=self._wm, bg=RAIL_BG).pack(side="left")
+        except Exception:
+            tk.Label(brand, text="WITNESS", bg=RAIL_BG, fg=ACCENT,
+                     font=("Segoe UI Black", 14, "bold")).pack(side="left")
 
-        # status card: state on the left, live kill count on the right
-        card = tk.Frame(r, bg=PANEL, highlightbackground=LINE, highlightthickness=1)
-        card.pack(fill="x", padx=22, pady=(6, 16))
-        inner = tk.Frame(card, bg=PANEL)
-        inner.pack(fill="x", padx=22, pady=18)
-        left = tk.Frame(inner, bg=PANEL)
-        left.pack(side="left", anchor="w")
-        self.status = tk.Label(left, text=f"{self.DOT}  READY", bg=PANEL, fg=MUTED,
-                               font=("Consolas", 13, "bold"))
-        self.status.pack(anchor="w")
-        self.status_sub = tk.Label(left, text="Press START to begin watching",
-                                   bg=PANEL, fg=MUTED, font=("Consolas", 9))
-        self.status_sub.pack(anchor="w", pady=(4, 0))
-        right = tk.Frame(inner, bg=PANEL)
-        right.pack(side="right", anchor="e")
-        self.count_lbl = tk.Label(right, text="0", bg=PANEL, fg=ACCENT,
-                                  font=("Segoe UI", 34, "bold"))
-        self.count_lbl.pack(anchor="e")
-        tk.Label(right, text="KILLS", bg=PANEL, fg=MUTED,
-                 font=("Consolas", 8, "bold")).pack(anchor="e")
+        nav = tk.Frame(rail, bg=RAIL_BG)
+        nav.pack(fill="x", padx=12, pady=(6, 0))
+        items = [("Live", self._go_live), ("Reels", self.open_reels),
+                 ("Stats", self.open_stats), ("Teach a game", self.open_teach),
+                 ("Settings", self.open_settings), ("How to use", self.open_help),
+                 ("Folder", self.open_folder)]
+        self._nav_btns = {}
+        for label, cmd in items:
+            b = tk.Button(nav, text=f"{self.DOT}   {label}", command=cmd,
+                          bg=RAIL_BG, fg=NAV_MUTED, activebackground="#17202b",
+                          activeforeground=TEXT, relief="flat", bd=0, anchor="w",
+                          font=("Consolas", 11), cursor="hand2", padx=12, pady=9)
+            b.pack(fill="x", pady=1)
+            self._nav_btns[label] = b
+        self._nav_active("Live")
 
-        # start / stop
-        self.toggle = tk.Button(r, text="START", command=self.toggle_run,
-                                bg=ACCENT, fg=BG, activebackground="#8746c4",
-                                activeforeground=BG, relief="flat",
-                                font=("Segoe UI", 14, "bold"), height=2, cursor="hand2")
-        self.toggle.pack(fill="x", padx=22, pady=(0, 10))
+        tk.Frame(rail, bg=RAIL_BG).pack(fill="both", expand=True)  # spacer
 
-        # test mode (subtle)
-        self.dry = tk.BooleanVar(value=False)
-        dryrow = tk.Frame(r, bg=BG)
-        dryrow.pack(fill="x", padx=22, pady=(0, 4))
-        tk.Label(dryrow, text="Test mode — detect only, save nothing",
-                 bg=BG, fg=MUTED, font=("Consolas", 9)).pack(side="left")
-        self.dry_btn = tk.Button(dryrow, width=9, relief="flat", bd=0,
-                                 padx=6, pady=3,
-                                 font=("Consolas", 9, "bold"), cursor="hand2",
+        # test mode (subtle) + start/stop at the foot of the rail
+        drow = tk.Frame(rail, bg=RAIL_BG)
+        drow.pack(fill="x", padx=18, pady=(0, 6))
+        tk.Label(drow, text="Test mode", bg=RAIL_BG, fg=NAV_MUTED,
+                 font=("Consolas", 9)).pack(side="left")
+        self.dry_btn = tk.Button(drow, width=8, relief="flat", bd=0, pady=2,
+                                 font=("Consolas", 8, "bold"), cursor="hand2",
                                  command=self._flip_dry)
         self._render_dry()
         self.dry_btn.pack(side="right")
+        self.toggle = tk.Button(rail, text="START", command=self.toggle_run,
+                                bg=ACCENT, fg=BG, activebackground="#8746c4",
+                                activeforeground=BG, relief="flat",
+                                font=("Segoe UI", 13, "bold"), height=2,
+                                cursor="hand2")
+        self.toggle.pack(fill="x", padx=16, pady=(0, 18))
 
-        # actions
-        btns = tk.Frame(r, bg=BG)
-        btns.pack(fill="x", padx=22, pady=(16, 4))
-        for label, cmd in [("Dashboard", self.open_dashboard),
-                           ("Settings", self.open_settings),
-                           ("Teach a game", self.open_teach),
-                           ("How to use", self.open_help),
-                           ("Folder", self.open_folder)]:
-            tk.Button(btns, text=label, command=cmd, bg=PANEL, fg=TEXT,
-                      activebackground=LINE, activeforeground=TEXT, relief="flat",
-                      font=("Consolas", 9), cursor="hand2", pady=9).pack(
-                          side="left", expand=True, fill="x", padx=3)
+    def _nav_active(self, name):
+        for label, b in self._nav_btns.items():
+            on = label == name
+            b.config(bg="#17202b" if on else RAIL_BG,
+                     fg=TEXT if on else NAV_MUTED)
 
-        # activity log — hidden by default, revealed by the toggle
-        self.activity_open = False
-        self.act_btn = tk.Button(r, text="▸  Activity log", anchor="w",
-                                 command=self._toggle_activity, bg=BG, fg=MUTED,
-                                 activebackground=BG, activeforeground=TEXT,
-                                 relief="flat", bd=0, font=("Consolas", 9),
-                                 cursor="hand2")
-        self.act_btn.pack(fill="x", padx=22, pady=(16, 2))
-        self.log = scrolledtext.ScrolledText(
-            r, bg=PANEL, fg=TEXT, insertbackground=TEXT, relief="flat",
-            font=("Consolas", 9), height=8, wrap="word", borderwidth=0)
-        self.log.configure(state="disabled")   # built, not shown until toggled
+    # --- main stage: idle / live --------------------------------------------
 
-        if UPDATE_MSG:
-            self._log(UPDATE_MSG)
-        self._log("Ready. Press START — OBS launches automatically if needed.")
+    def _clear_main(self):
+        for w in self.main.winfo_children():
+            w.destroy()
 
-    def _toggle_activity(self):
-        self.activity_open = not self.activity_open
-        if self.activity_open:
-            self.act_btn.config(text="▾  Activity log")
-            self.log.pack(fill="both", expand=True, padx=22, pady=(0, 16))
-            try:
-                self.root.geometry("560x700")
-            except Exception:
-                pass
+    def _show_idle(self):
+        self._clear_main()
+        self._live_built = False
+        wrap = tk.Frame(self.main, bg=BG)
+        wrap.place(relx=.5, rely=.5, anchor="center")
+        try:
+            self._idle_logo = tk.PhotoImage(file=os.path.join(BASE, "witness_logo_splash.png"))
+            tk.Label(wrap, image=self._idle_logo, bg=BG).pack()
+        except Exception:
+            tk.Label(wrap, text=self.DOT, bg=BG, fg=ACCENT,
+                     font=("Segoe UI", 60)).pack()
+        tk.Label(wrap, text="Ready when you are.", bg=BG, fg=TEXT,
+                 font=("Segoe UI", 20, "bold")).pack(pady=(18, 6))
+        tk.Label(wrap, text="P R E S S   S T A R T   T O   B E G I N", bg=BG,
+                 fg=MUTED, font=("Consolas", 9)).pack()
+
+    def _show_live(self):
+        self._clear_main()
+        pad = tk.Frame(self.main, bg=BG)
+        pad.pack(fill="both", expand=True, padx=26, pady=24)
+        top = tk.Frame(pad, bg=BG)
+        top.pack(fill="x")
+        stat = tk.Frame(top, bg=BG)
+        stat.pack(side="left", anchor="nw")
+        self.status = tk.Label(stat, text=f"{self.DOT}  WATCHING", bg=BG, fg=GREEN,
+                               font=("Consolas", 15, "bold"))
+        self.status.pack(anchor="w")
+        self.status_sub = tk.Label(stat, text="session 0:00", bg=BG, fg=MUTED,
+                                   font=("Consolas", 10))
+        self.status_sub.pack(anchor="w", pady=(5, 0))
+        cnt = tk.Frame(top, bg=BG)
+        cnt.pack(side="right", anchor="ne")
+        self.count_lbl = tk.Label(cnt, text=str(self.count), bg=BG, fg=ACCENT,
+                                  font=("Segoe UI", 40, "bold"))
+        self.count_lbl.pack(anchor="e")
+        tk.Label(cnt, text="KILLS", bg=BG, fg=MUTED,
+                 font=("Consolas", 8, "bold")).pack(anchor="e")
+
+        tiles = tk.Frame(pad, bg=BG)
+        tiles.pack(fill="x", pady=(20, 4))
+        self._tile_vals = {}
+        for key, label, col in [("downs", "DOWNS", TEXT), ("precision", "PRECISION", ACCENT),
+                                ("finishers", "FINISHERS", "#f5a623"),
+                                ("assists", "ASSISTS", "#37cabb")]:
+            t = tk.Frame(tiles, bg=PANEL, highlightbackground=LINE, highlightthickness=1)
+            t.pack(side="left", expand=True, fill="x", padx=4)
+            v = tk.Label(t, text="0", bg=PANEL, fg=col, font=("Segoe UI", 20, "bold"))
+            v.pack(pady=(12, 0))
+            tk.Label(t, text=label, bg=PANEL, fg=MUTED,
+                     font=("Consolas", 8, "bold")).pack(pady=(2, 12))
+            self._tile_vals[key] = v
+
+        tk.Label(pad, text="RECENT", bg=BG, fg="#5f6572",
+                 font=("Consolas", 9)).pack(anchor="w", pady=(18, 8))
+        self.feed = tk.Frame(pad, bg=BG)
+        self.feed.pack(fill="x")
+
+        tk.Label(pad, text="LATEST CLIP", bg=BG, fg="#5f6572",
+                 font=("Consolas", 9)).pack(anchor="w", pady=(18, 8))
+        clip = tk.Frame(pad, bg=PANEL, highlightbackground=LINE, highlightthickness=1)
+        clip.pack(fill="x")
+        thumb = tk.Frame(clip, bg="#1a1224", width=104, height=60,
+                         highlightbackground="#2a1f3a", highlightthickness=1)
+        thumb.pack(side="left", padx=14, pady=14)
+        thumb.pack_propagate(False)
+        tk.Label(thumb, text="▷", bg="#1a1224", fg=ACCENT,
+                 font=("Segoe UI", 18)).pack(expand=True)
+        cmeta = tk.Frame(clip, bg=PANEL)
+        cmeta.pack(side="left", anchor="w")
+        self.clip_title = tk.Label(cmeta, text="no clips yet", bg=PANEL, fg=TEXT,
+                                   font=("Consolas", 12, "bold"))
+        self.clip_title.pack(anchor="w")
+        self.clip_sub = tk.Label(cmeta, text="your saved kills show up here",
+                                 bg=PANEL, fg=MUTED, font=("Consolas", 9))
+        self.clip_sub.pack(anchor="w", pady=(4, 0))
+        self._live_built = True
+        self._refresh_live()
+
+    def _refresh_live(self):
+        if not getattr(self, "_live_built", False):
+            return
+        c = {}
+        for t in self.tags:
+            c[t] = c.get(t, 0) + 1
+        vals = {"downs": c.get("down", 0) + c.get("kill", 0),
+                "precision": c.get("precision", 0),
+                "finishers": c.get("finisher", 0),
+                "assists": c.get("assist", 0)}
+        for k, v in vals.items():
+            self._tile_vals[k].config(text=str(v))
+        for w in self.feed.winfo_children():
+            w.destroy()
+        for hhmmss, tag in self.recent[-3:][::-1]:
+            row = tk.Frame(self.feed, bg=PANEL, highlightbackground="#1e2530",
+                           highlightthickness=1)
+            row.pack(fill="x", pady=2)
+            tk.Label(row, text=hhmmss, bg=PANEL, fg="#5f6572",
+                     font=("Consolas", 9)).pack(side="left", padx=(14, 10), pady=8)
+            tk.Label(row, text=TAG_LABEL.get(tag, tag.upper()), bg=PANEL, fg="#c7ccd6",
+                     font=("Consolas", 11)).pack(side="left")
+            pill = TAG_PILL.get(tag, "#8a90a0")
+            tk.Label(row, text=f" {tag} ", bg=PANEL, fg=pill,
+                     font=("Consolas", 8, "bold")).pack(side="right", padx=12)
+        if self.latest:
+            tag, when = self.latest
+            self.clip_title.config(text=TAG_LABEL.get(tag, tag.upper()))
+            self.clip_sub.config(text=f"saved {when} · rewatch on the dashboard")
+
+    def _go_live(self):
+        self._nav_active("Live")
+        if self.running:
+            if not getattr(self, "_live_built", False):
+                self._show_live()
         else:
-            self.act_btn.config(text="▸  Activity log")
-            self.log.pack_forget()
-            try:
-                self.root.geometry("560x500")
-            except Exception:
-                pass
+            self._show_idle()
+
+    # --- test mode -----------------------------------------------------------
 
     def _render_dry(self):
         on = self.dry.get()
-        # ASCII box in the label so the state is legible even if button bg
-        # colors don't paint on the user's Windows theme
-        self.dry_btn.config(text="[X] ON" if on else "[  ] OFF",
-                            bg=ACCENT if on else PANEL,
-                            fg=BG if on else TEXT,
-                            activebackground="#8746c4" if on else LINE,
+        self.dry_btn.config(text="[X] ON" if on else "[  ]OFF",
+                            bg=ACCENT if on else RAIL_BG,
+                            fg=BG if on else NAV_MUTED,
+                            activebackground="#8746c4" if on else "#17202b",
                             activeforeground=BG if on else TEXT)
 
     def _flip_dry(self):
         self.dry.set(not self.dry.get())
         self._render_dry()
 
-    # --- actions -------------------------------------------------------------
+    # --- run control ---------------------------------------------------------
 
     def toggle_run(self):
         if self.running:
@@ -206,16 +313,18 @@ class ControlPanel:
 
     def start(self):
         self.count = 0
-        self.count_lbl.config(text="0")
+        self.tags = []
+        self.recent = []
+        self.latest = None
+        self.session_start = time.monotonic()
         self.stop_event = threading.Event()
         self._orig_out = sys.stdout
         self._orig_err = sys.stderr
         sys.stdout = sys.stderr = QueueWriter(self.q)
         self.running = True
         self.toggle.config(text="STOP", bg=RED, activebackground="#d63a30", fg="white")
-        self._set_status(f"{self.DOT}  STARTING…", MUTED, "Loading the text reader…")
-        self._log("Starting — loading the text reader (first start takes a few seconds)...")
-
+        self._show_live()
+        self._set_status(f"{self.DOT}  STARTING…", MUTED, "loading the text reader…")
         dry = self.dry.get()
 
         def run():
@@ -226,20 +335,17 @@ class ControlPanel:
                 self.q.put(("log", f"ERROR: {e}\n"))
             finally:
                 self.q.put(("stopped", None))
-
         self.worker = threading.Thread(target=run, daemon=True)
         self.worker.start()
 
     def stop(self):
         if self.stop_event:
             self.stop_event.set()
-        # The end-of-session builds (recap, montage, reels) run for a bit
-        # after stop — say so instead of sitting on a red STOP that looks stuck.
         self.toggle.config(text="FINISHING…", state="disabled",
                            bg=PANEL, activebackground=PANEL, fg=MUTED)
-        self._set_status(f"{self.DOT}  FINISHING…", MUTED,
-                         "Building your recap + reels…")
-        self._log("Stopping — clips are safe; building your recap and reels...")
+        if hasattr(self, "status"):
+            self._set_status(f"{self.DOT}  FINISHING…", MUTED,
+                             "building your recap + reels…")
 
     def _finish_stop(self):
         self.running = False
@@ -250,34 +356,41 @@ class ControlPanel:
             pass
         self.toggle.config(text="START", state="normal", bg=ACCENT,
                            activebackground="#8746c4", fg=BG)
-        self._set_status(f"{self.DOT}  READY", MUTED, "Press START to begin watching")
+        self.session_start = None
+        self._show_idle()
+
+    # --- nav actions ---------------------------------------------------------
 
     def open_dashboard(self):
         if self.running and self.cfg.get("web_dashboard", True):
             self._open(f"http://localhost:{self.cfg.get('web_port', 8000)}")
             return
         p = os.path.join(BASE, "stats", "dashboard.html")
-        if os.path.exists(p):
-            self._open(p)
-        else:
-            self._log("No dashboard yet — press START (live view) or finish a "
-                      "session first (stats page).")
+        self._open(p if os.path.exists(p) else BASE)
+
+    def open_reels(self):
+        self._nav_active("Reels")
+        self.open_dashboard()
+
+    def open_stats(self):
+        self._nav_active("Stats")
+        if self.running and self.cfg.get("web_dashboard", True):
+            self._open(f"http://localhost:{self.cfg.get('web_port', 8000)}/stats")
+            return
+        p = os.path.join(BASE, "stats", "dashboard.html")
+        self._open(p if os.path.exists(p) else BASE)
 
     def open_settings(self):
         SettingsWindow(self.root, self.cfg, self._log)
 
     def open_teach(self):
-        """The branded windowed teach-a-game wizard (its own process + tk root
-        so the OCR/model load never blocks this window)."""
         if self.running:
             self._log("Stop the current session first, then teach a game.")
             return
-        self._log("Opening the teach-a-game wizard...")
         try:
             subprocess.Popen([sys.executable, os.path.join(BASE, "teach_gui.py")],
                              cwd=BASE,
-                             creationflags=getattr(subprocess,
-                                                   "CREATE_NO_WINDOW", 0))
+                             creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
         except Exception as e:
             self._log(f"Could not launch the wizard: {e}")
 
@@ -287,32 +400,44 @@ class ControlPanel:
     def open_folder(self):
         self._open(BASE)
 
-    def recalibrate(self):
-        self._log("Launching calibration in a separate window...")
-        try:
-            subprocess.Popen([sys.executable, os.path.join(BASE, "calibrate.py")],
-                             cwd=BASE)
-        except Exception as e:
-            self._log(f"Could not launch calibrate: {e}")
-
     # --- helpers -------------------------------------------------------------
 
     def _open(self, path):
         try:
-            os.startfile(path)  # Windows
+            os.startfile(path)
         except Exception as e:
             self._log(f"Could not open {path}: {e}")
 
     def _set_status(self, text, color, sub=None):
-        self.status.config(text=text, fg=color)
-        if sub is not None and hasattr(self, "status_sub"):
-            self.status_sub.config(text=sub)
+        if hasattr(self, "status") and self.status.winfo_exists():
+            self.status.config(text=text, fg=color)
+            if sub is not None and hasattr(self, "status_sub"):
+                self.status_sub.config(text=sub)
 
     def _log(self, msg):
-        self.log.configure(state="normal")
-        self.log.insert("end", msg.rstrip() + "\n")
-        self.log.see("end")
-        self.log.configure(state="disabled")
+        # command center has no log pane; keep for the session-log file + debug
+        pass
+
+    def _tick(self):
+        if self.running and self.session_start and hasattr(self, "status_sub"):
+            secs = int(time.monotonic() - self.session_start)
+            if getattr(self, "_watching", False):
+                self.status_sub.config(text=f"session {secs // 60}:{secs % 60:02d}")
+        self.root.after(1000, self._tick)
+
+    def _parse_kill(self, line):
+        # 'KILL #7 [precision]: ...'
+        try:
+            import re
+            m = re.search(r"KILL #\d+ \[(\w+)\]", line)
+            if m:
+                tag = m.group(1)
+                self.tags.append(tag)
+                self.recent.append((time.strftime("%H:%M:%S"), tag))
+                self.latest = (tag, time.strftime("%H:%M"))
+                self._refresh_live()
+        except Exception:
+            pass
 
     def _drain(self):
         try:
@@ -320,23 +445,24 @@ class ControlPanel:
                 kind, val = self.q.get_nowait()
                 if kind == "log":
                     s = val.rstrip()
-                    if s:
-                        self._log(s)
-                        if "Detecting [" in s:
-                            self._set_status(f"{self.DOT}  WATCHING", GREEN,
-                                             "Watching your screen for kills")
+                    if not s:
+                        continue
+                    if "Detecting [" in s:
+                        self._watching = True
+                        self._set_status(f"{self.DOT}  WATCHING", GREEN,
+                                         "session 0:00")
+                    if "KILL #" in s and "[" in s:
+                        self._parse_kill(s)
                 elif kind == "count":
                     self.count = val
-                    self.count_lbl.config(text=str(val))
-                    if self.running:
-                        self._set_status(f"{self.DOT}  WATCHING", GREEN,
-                                         "Watching your screen for kills")
+                    if hasattr(self, "count_lbl") and self.count_lbl.winfo_exists():
+                        self.count_lbl.config(text=str(val))
                 elif kind == "stopped":
+                    self._watching = False
                     self._finish_stop()
         except queue.Empty:
             pass
         self.root.after(100, self._drain)
-
 
 class SettingsWindow:
     """Same live-appliable settings as the web dashboard's panel — changes hit
