@@ -154,6 +154,34 @@ def ensure_medal_sounds(base_dir: str, voice: str, ffmpeg: str,
     return out
 
 
+def ensure_callout(base_dir: str, text: str, voice: str, ffmpeg: str,
+                   pitch: str = DEFAULT_PITCH) -> str:
+    """One arbitrary arena-processed call-out (e.g. 'You just killed
+    Marshyy!'), rendered on first use and cached beside the medals. Returns
+    the wav path, or '' if no synth worked."""
+    safe_voice = "".join(c for c in f"{voice}{pitch}{_MEDAL_CACHE_VER}"
+                         if c.isalnum() or c in "-_")
+    mdir = os.path.join(base_dir, "cache_medals", safe_voice)
+    os.makedirs(mdir, exist_ok=True)
+    slug = "".join(c for c in text.lower() if c.isalnum())[:48]
+    wav = os.path.join(mdir, f"co_{slug}.wav")
+    if os.path.exists(wav):
+        return wav
+    src = _medal_shout(text, os.path.join(mdir, f"co_{slug}_raw.mp3"), voice, pitch)
+    if not src:
+        src = synth_to_wav(text, os.path.join(mdir, f"co_{slug}_raw.wav"), voice, pitch)
+    if not src:
+        return ""
+    r = subprocess.run([ffmpeg, "-y", "-i", src, "-af", ARENA_FX, "-ar", "48000", wav],
+                       capture_output=True, text=True,
+                       creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
+    try:
+        os.remove(src)
+    except OSError:
+        pass
+    return wav if r.returncode == 0 and os.path.exists(wav) else ""
+
+
 def _medal_shout(text: str, out_mp3: str, voice: str, pitch: str) -> str | None:
     """Neural render tuned for a SHOUT: faster and louder than narration."""
     try:

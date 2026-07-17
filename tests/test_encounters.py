@@ -5,7 +5,8 @@ import sys
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from encounters import _group, extract, should_log  # noqa: E402
+from encounters import (DEFAULT_WATCHLIST, _group, extract,  # noqa: E402
+                        should_log, watch_hit)
 
 TAG = "MRVIZNASTY"
 
@@ -59,6 +60,20 @@ def test_should_log_debounces_repeat_sightings():
     assert not should_log(recent, "victim", "SOMEDUDE", now=110.0)   # same line re-read
     assert should_log(recent, "victim", "SOMEDUDE", now=200.0)       # a later, real re-kill
     assert should_log(recent, "killed_by", "SOMEDUDE", now=112.0)    # other direction ok
+
+
+def test_watch_hit_exact_and_slips():
+    assert watch_hit("MARSHYY", DEFAULT_WATCHLIST) == "MARSHYY"
+    assert watch_hit("MARSHY", DEFAULT_WATCHLIST) == "MARSHYY"        # OCR drop
+    assert watch_hit("SERAPHMAX YT", DEFAULT_WATCHLIST) == "SERAPHMAXYT"
+    assert watch_hit("5ERAPHMAXYT", DEFAULT_WATCHLIST) == "SERAPHMAXYT"
+
+
+def test_watch_hit_non_streamers_pass_through():
+    assert watch_hit("SUPREMEPLAYS", DEFAULT_WATCHLIST) == ""
+    assert watch_hit("XX SANIK XX", DEFAULT_WATCHLIST) == ""
+    assert watch_hit("", DEFAULT_WATCHLIST) == ""
+    assert watch_hit("MARSHYY", []) == ""
 
 
 def test_group_merges_ocr_spellings():

@@ -174,6 +174,13 @@ class LiveState:
             self.events.appendleft(
                 {"time": time.strftime("%H:%M:%S"), "tag": tag, "text": (text or "")[:60]})
 
+    def notice(self, text, tag="alert"):
+        """A feed-only line (streamer alerts etc.) — shows in the kill feed
+        without touching the kill count or the tag tiles."""
+        with self._lock:
+            self.events.appendleft(
+                {"time": time.strftime("%H:%M:%S"), "tag": tag, "text": (text or "")[:60]})
+
     def request_clip(self):
         with self._lock:
             self._clip_requested = True

@@ -161,6 +161,15 @@ ffmpeg_path: ""        # leave empty to auto-find ffmpeg.exe in this folder / PA
 track_names: true
 gamertag: "MRVIZNASTY"
 
+# Streamer watchlist: gamertags that get the BIG alert when they show up in
+# your kill feed — on-screen banner, voiced call-out, and if one of them
+# downs YOU the clip is saved automatically (your kills are clipped anyway).
+# Fuzzy-matched, so OCR slips still hit. Needs track_names: true.
+streamer_watchlist:
+  - "MARSHYY"
+  - "SERAPHMAXYT"
+watchlist_clip_deaths: true
+
 # At match end, when the EXFILTRATED summary screen appears, grab it once and
 # log the real match stats (elims/downs/damage/run time) to stats/match_stats.csv
 # — and print an audit: game's kill count vs what we detected.

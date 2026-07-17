@@ -751,8 +751,64 @@ def _scan_feed_names(cfg, engine, s, expect):
             encounters.log(base, s["session_id"], direction, name)
             verb = "you downed" if direction == "victim" else "downed by"
             print(f"  [names] {verb}: {name}")
+            watch = encounters.watch_hit(
+                name, cfg.get("streamer_watchlist", encounters.DEFAULT_WATCHLIST))
+            if watch:
+                _streamer_alert(cfg, s, direction, watch)
     except Exception as e:
         print(f"  [names] scan error: {e}")
+
+
+def _streamer_alert(cfg, s, direction, watch):
+    """A watchlist name showed up in the feed — make it unmissable: banner,
+    voiced call-out, and (for deaths) save the clip, because a streamer
+    downing you is a moment you'll want on tape."""
+    killed = direction == "victim"
+    text = f"YOU KILLED {watch}!" if killed else f"DOWNED BY {watch}"
+    print(f"  *** STREAMER ALERT: {text} ***")
+    show_text_overlay(cfg, text, size=64, position="custom:0.5,0.33",
+                      color="#d3f24b" if killed else "#ff4d3d",
+                      duration_ms=2600)
+    if s["web"] is not None:
+        try:
+            s["web"].notice(text, "streamer")
+        except Exception:
+            pass
+
+    if cfg.get("announcer_medals", True):
+        phrase = (f"You just killed {watch}!" if killed
+                  else f"{watch} just downed you.")
+        def speak():
+            try:
+                import announcer
+                import montage
+                base = os.path.dirname(os.path.abspath(__file__))
+                wav = announcer.ensure_callout(
+                    base, phrase,
+                    cfg.get("announcer_voice", announcer.DEFAULT_VOICE),
+                    montage.find_ffmpeg(base, cfg),
+                    pitch=cfg.get("announcer_pitch", announcer.DEFAULT_PITCH))
+                if wav:
+                    announcer.play_medal({"co": wav}, "co")
+            except Exception as e:
+                print(f"  [watchlist] call-out failed: {e}")
+        threading.Thread(target=speak, daemon=True).start()
+
+    # Your kills are already being clipped; a death normally isn't. This one is.
+    if not killed and cfg.get("watchlist_clip_deaths", True):
+        now = time.monotonic()
+        if now - s["last_save"] >= s["min_save"] and s["obs"].save_replay():
+            s["last_save"] = now
+            def on_done(dest):
+                _register_replay_async(s, dest, f"downed by {watch}", s["count"])
+                if s["cfg"].get("overlay_clip_saved", True):
+                    show_text_overlay(s["cfg"], "CLIP SAVED", size=26,
+                                      position="bottom-right", color="#aab4bd",
+                                      duration_ms=1100, rise=False)
+            if s["organize"]:
+                rename_clip_async(s["obs"], s["session_id"],
+                                  f"downedby_{watch.lower()}", s["count"],
+                                  on_done=on_done)
 
 
 def _maybe_capture_killer(cfg, engine, lines, s, now):

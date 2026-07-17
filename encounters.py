@@ -27,6 +27,11 @@ from rapidfuzz import fuzz
 
 DEFAULT_GAMERTAG = "MRVIZNASTY"
 
+# Streamer watchlist: feed names that trigger the big alert (banner + voiced
+# call-out, and a saved clip when one of them downs you). Overridden by
+# streamer_watchlist in config.yaml.
+DEFAULT_WATCHLIST = ["MARSHYY", "SERAPHMAXYT"]
+
 # Bottom-left slice of the frame holding the kill feed (fractions of the
 # frame). Ends above the squad panel so teammate name plates aren't read.
 FEED_REGION = {"x": 0.0, "y": 0.52, "w": 0.34, "h": 0.22}
@@ -114,6 +119,19 @@ def capture(cfg, engine) -> list[tuple[str, str]]:
     rows = (engine.read_rows(crop) if hasattr(engine, "read_rows")
             else engine.read_lines(crop))
     return extract(rows, cfg.get("gamertag") or DEFAULT_GAMERTAG)
+
+
+def watch_hit(name: str, watchlist) -> str:
+    """The watchlist entry a feed name matches, or ''. Fuzzy: OCR slips and
+    spacing differences ('SERAPHMAX YT') still hit."""
+    n = "".join(c for c in name.lower() if c.isalnum())
+    if not n:
+        return ""
+    for w in watchlist or []:
+        wn = "".join(c for c in str(w).lower() if c.isalnum())
+        if wn and (fuzz.ratio(n, wn) >= 85 or wn in n):
+            return str(w)
+    return ""
 
 
 def should_log(recent: dict, direction: str, name: str,
