@@ -206,8 +206,12 @@ class ControlPanel:
     def stop(self):
         if self.stop_event:
             self.stop_event.set()
-        self._set_status("STOPPING...", MUTED)
-        self._log("Stopping — writing your session recap...")
+        # The end-of-session builds (recap, montage, reels) run for a bit
+        # after stop — say so instead of sitting on a red STOP that looks stuck.
+        self.toggle.config(text="FINISHING...", state="disabled",
+                           bg=PANEL, activebackground=PANEL, fg=MUTED)
+        self._set_status("FINISHING — building recap + reels...", MUTED)
+        self._log("Stopping — clips are safe; building your recap and reels...")
 
     def _finish_stop(self):
         self.running = False
@@ -216,7 +220,8 @@ class ControlPanel:
             sys.stderr = self._orig_err
         except Exception:
             pass
-        self.toggle.config(text="START", bg=ACCENT, activebackground="#bfe038", fg=BG)
+        self.toggle.config(text="START", state="normal", bg=ACCENT,
+                           activebackground="#bfe038", fg=BG)
         self._set_status("STOPPED", MUTED)
 
     def open_dashboard(self):

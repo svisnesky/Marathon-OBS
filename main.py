@@ -127,7 +127,31 @@ def load_config(path=CONFIG_PATH) -> dict:
             print(f"(could not read game profile {pfile}: {e})")
 
     cfg.update(override)
+    _migrate_legacy_voice(cfg, override)
     return cfg
+
+
+def _migrate_legacy_voice(cfg, override) -> None:
+    """Configs written before the deep-Christopher upgrade carry the old
+    default voice (GuyNeural, no pitch key) — and config.yaml is never
+    overwritten by updates, so the better voice never arrived. Upgrade once,
+    persisting to settings_override.yaml (which wins over config.yaml). A
+    deliberate later choice of Guy (made via a config that HAS a pitch key,
+    or a prior override) is left alone."""
+    legacy = (cfg.get("announcer_voice") == "en-US-GuyNeural"
+              and "announcer_pitch" not in cfg
+              and "announcer_voice" not in override)
+    if not legacy:
+        return
+    changes = {"announcer_voice": "en-US-ChristopherNeural",
+               "announcer_pitch": "-18Hz"}
+    cfg.update(changes)
+    try:
+        save_setting_overrides(changes)
+        print("(voice upgraded to the deep broadcast announcer — "
+              "en-US-ChristopherNeural at -18Hz)")
+    except Exception:
+        pass
 
 
 def save_setting_overrides(changes: dict) -> None:
@@ -721,13 +745,20 @@ def _check_coalesce(s):
 def _handle_kill(cfg, ev, s, on_count=None):
     """Process a single detected kill event. Mutates the session dict `s`."""
     now = time.monotonic()
-    s["count"] += 1
-    count = s["count"]
     tag = classify_event(ev.raw_line)
+    # A finisher on YOUR OWN down is the same kill, not a new one — the clip
+    # coalescer already knows this; the headline counter now agrees. (A
+    # standalone finisher — finishing a teammate's down — still counts.)
+    own_finisher = (tag == "finisher"
+                    and any(p["tag"] in ("down", "precision")
+                            for p in s.get("_coalesce_pending", [])))
+    if not own_finisher:
+        s["count"] += 1
+    count = s["count"]
     s["session_tags"].append(tag)
     s.setdefault("match_tags", []).append(tag)  # reset each exfil for the audit
     print(f"KILL #{count} [{tag}]: {ev.raw_line!r}")
-    if s.get("clutch"):
+    if s.get("clutch") and not own_finisher:
         s["clutch_kills"] = s.get("clutch_kills", 0) + 1
         print(f"  [clutch] solo kill #{s['clutch_kills']} — staying quiet")
 
@@ -1226,7 +1257,8 @@ def _run_live_inner(cfg: dict, dry_run: bool = False, stop_event=None, on_count=
     if acc_line:
         print(acc_line)
     _end_session(cfg, s["session_tags"], s["session_start"],
-                 s["session_start_wall"], dry_run, s["obs"], s["session_id"])
+                 s["session_start_wall"], dry_run, s["obs"], s["session_id"],
+                 kills=s["count"])
 
 
 def exfil_stats_accuracy(s) -> str:
@@ -1237,8 +1269,11 @@ def exfil_stats_accuracy(s) -> str:
         return ""
 
 
-def _end_session(cfg, tags, start_monotonic, start_wall, dry_run, obs=None, session_id=None):
-    total = len(tags)
+def _end_session(cfg, tags, start_monotonic, start_wall, dry_run, obs=None,
+                 session_id=None, kills=None):
+    # kills = real kills (a down + its finisher counted once); tags = every
+    # detected event, for the type breakdown.
+    total = kills if kills is not None else len(tags)
     dur_min = max(0.01, (time.monotonic() - start_monotonic) / 60.0)
     c = Counter(tags)
     print("\n" + "-" * 44)

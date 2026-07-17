@@ -147,12 +147,25 @@ def _ffprobe_path(ffmpeg: str) -> str:
 
 def probe_duration(path: str, ffmpeg: str):
     """Media duration in seconds, or None."""
-    r = _run([_ffprobe_path(ffmpeg), "-v", "error", "-show_entries",
-              "format=duration", "-of", "csv=p=0", path])
     try:
+        r = _run([_ffprobe_path(ffmpeg), "-v", "error", "-show_entries",
+                  "format=duration", "-of", "csv=p=0", path])
         return float(r.stdout.strip().splitlines()[-1])
-    except (ValueError, IndexError):
-        return None
+    except (OSError, ValueError, IndexError):
+        pass
+    # ffprobe.exe missing — the classic setup has only ffmpeg.exe copied out
+    # of the zip, and that raised WinError 2 here and killed the whole reel.
+    # ffmpeg itself prints the duration when asked to open the file.
+    try:
+        import re
+        r = _run([ffmpeg, "-hide_banner", "-i", path])
+        m = re.search(r"Duration:\s*(\d+):(\d+):(\d+(?:\.\d+)?)", r.stderr or "")
+        if m:
+            return (int(m.group(1)) * 3600 + int(m.group(2)) * 60
+                    + float(m.group(3)))
+    except OSError:
+        pass
+    return None
 
 
 def _music_inputs_and_chain(tracks: list[str], total: float, vol: float,
