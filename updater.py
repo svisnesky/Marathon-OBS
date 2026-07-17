@@ -122,6 +122,18 @@ def check_and_update(base_dir: str) -> tuple[bool, str]:
     return True, msg
 
 
+def _write_status(base_dir: str, msg: str) -> None:
+    """Persist the last update outcome to update_status.txt for diagnosis
+    (the webview has no console to print to)."""
+    try:
+        import time
+        with open(os.path.join(base_dir, "update_status.txt"), "w",
+                  encoding="utf-8") as f:
+            f.write(f"{time.strftime('%Y-%m-%d %H:%M:%S')}\n{msg}\n")
+    except Exception:
+        pass
+
+
 def update_and_relaunch_if_needed(base_dir: str, argv=None) -> str:
     """For launchers: run the update; if code changed, relaunch this process
     so the fresh files actually load. Returns the status message (only when
@@ -131,8 +143,10 @@ def update_and_relaunch_if_needed(base_dir: str, argv=None) -> str:
     if os.environ.get("MKR_UPDATED") == "1":
         # Just relaunched after an update — don't loop.
         os.environ.pop("MKR_UPDATED", None)
+        _write_status(base_dir, "Restarted on the latest version (update applied).")
         return "Restarted on the latest version."
     changed, msg = check_and_update(base_dir)
+    _write_status(base_dir, msg)
     if changed:
         env = dict(os.environ, MKR_UPDATED="1")
         subprocess.Popen([sys.executable] + list(argv or sys.argv),
