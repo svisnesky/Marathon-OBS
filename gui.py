@@ -233,21 +233,17 @@ class ControlPanel:
         SettingsWindow(self.root, self.cfg, self._log)
 
     def open_teach(self):
-        """The teach-a-game wizard is interactive — run it in its own console
-        window so it can ask questions while the GUI stays up."""
+        """The branded windowed teach-a-game wizard (its own process + tk root
+        so the OCR/model load never blocks this window)."""
         if self.running:
             self._log("Stop the current session first, then teach a game.")
             return
-        self._log("Launching the teach-a-game wizard in its own window...")
+        self._log("Opening the teach-a-game wizard...")
         try:
-            exe = sys.executable
-            # the wizard needs a real console for input(); pythonw has none
-            if os.path.basename(exe).lower() == "pythonw.exe":
-                exe = os.path.join(os.path.dirname(exe), "python.exe")
-            subprocess.Popen([exe, os.path.join(BASE, "main.py"), "--teach"],
+            subprocess.Popen([sys.executable, os.path.join(BASE, "teach_gui.py")],
                              cwd=BASE,
                              creationflags=getattr(subprocess,
-                                                   "CREATE_NEW_CONSOLE", 0))
+                                                   "CREATE_NO_WINDOW", 0))
         except Exception as e:
             self._log(f"Could not launch the wizard: {e}")
 
