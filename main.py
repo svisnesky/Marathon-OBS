@@ -701,7 +701,7 @@ def _register_replay_async(s, clip_path, tag, count):
                 capture_output=True, text=True,
                 creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
             if r.returncode == 0 and os.path.exists(mp4):
-                s["web"].add_replay(f"Kill #{count} — {tag}", mp4)
+                s["web"].add_replay(tag.replace("+", " + ").upper(), mp4)
                 print(f"  [replay] kill #{count} ready on the iPad")
             else:
                 tail = (r.stderr.strip().splitlines() or ["(no output)"])[-1]

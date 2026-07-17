@@ -756,149 +756,171 @@ PAGE = """<!doctype html><html lang="en"><head><meta charset="utf-8">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="Kill Feed">
 <link rel="apple-touch-icon" href="/skull.png">
-<title>Marathon Kill Feed</title>
+<title>WITNESS</title>
 <style>
-  :root { --bg:#0b0f12; --panel:#12181d; --line:#232d34; --text:#e8edf0;
-          --muted:#7d8a94; --accent:#9c58da; }
+  :root { --bg:#0b0f12; --void:#0d1218; --panel:#12181d; --panel2:#161d26;
+    --line:#232d34; --line2:#1e2530; --text:#e8edf0; --muted:#7d8a94;
+    --dim:#5f6572; --accent:#9c58da; --green:#5bd66b; }
   * { box-sizing:border-box; -webkit-tap-highlight-color:transparent; }
-  html, body { min-height:100%; }
-  body { margin:0; background:var(--bg); color:var(--text); text-align:center;
+  html, body { min-height:100%; margin:0; }
+  body { background:var(--bg); color:var(--text); user-select:none;
     font-family:ui-monospace,"SF Mono",Menlo,Consolas,monospace;
-    -webkit-font-smoothing:antialiased; user-select:none;
-    padding:calc(20px + env(safe-area-inset-top)) 16px calc(40px + env(safe-area-inset-bottom)); }
-  .wrap { max-width:640px; margin:0 auto; }
-  header { display:flex; align-items:center; justify-content:center; gap:12px; margin-bottom:6px; }
-  header img { height:34px; }
-  .status { font-size:.8rem; letter-spacing:.16em; text-transform:uppercase; margin-bottom:18px; }
-  .dot { display:inline-block; width:9px; height:9px; border-radius:50%; margin-right:7px;
+    -webkit-font-smoothing:antialiased; }
+  .app { display:flex; min-height:100vh; }
+  .rail { width:214px; flex:none; background:var(--void);
+    border-right:1px solid var(--line2); display:flex; flex-direction:column;
+    padding:calc(18px + env(safe-area-inset-top)) 0 18px; }
+  .brand { display:flex; align-items:center; gap:10px; padding:0 18px 16px; }
+  .brand img { height:30px; }
+  .brand .wm { color:var(--accent); font-weight:800; letter-spacing:.14em; font-size:15px; }
+  .nav { display:flex; flex-direction:column; gap:2px; padding:6px 12px; }
+  .nav a { display:flex; align-items:center; gap:11px; padding:11px 12px;
+    border-radius:7px; font-size:13px; color:#8a90a0; cursor:pointer; }
+  .nav a .i { width:6px; height:6px; border-radius:50%; background:#3a4453; }
+  .nav a.on { background:#17202b; color:var(--text); }
+  .nav a.on .i { background:var(--accent); }
+  .railfoot { margin-top:auto; padding:12px 16px 0; display:flex; flex-direction:column; gap:8px; }
+  .clipbtn { background:var(--accent); color:#0b0f12; border:none; border-radius:8px;
+    padding:13px; font:inherit; font-size:.82rem; font-weight:700; letter-spacing:.06em;
+    text-transform:uppercase; cursor:pointer; transition:opacity .15s, transform .1s; }
+  .clipbtn:active { transform:scale(.96); opacity:.85; }
+  .clipbtn.fired { background:var(--green); }
+  .minirow { display:flex; gap:8px; }
+  .fsbtn { flex:1; background:var(--panel); color:var(--muted); border:1px solid var(--line);
+    border-radius:7px; padding:9px 8px; font:inherit; font-size:.72rem; cursor:pointer; }
+  .main { flex:1; padding:26px 28px calc(28px + env(safe-area-inset-bottom));
+    max-width:900px; }
+  .top { display:flex; justify-content:space-between; align-items:flex-start; margin-bottom:22px; }
+  .status { font-size:1rem; }
+  .status .st { font-weight:700; font-size:1.05rem; letter-spacing:.02em; color:var(--muted); }
+  .status.live .st { color:var(--green); }
+  .dot { display:inline-block; width:9px; height:9px; border-radius:50%; margin-right:9px;
     vertical-align:middle; background:var(--muted); }
-  .live .dot { background:#5bd66b; box-shadow:0 0 10px #5bd66b; }
-  .big { font-size:28vw; line-height:.9; font-weight:800; font-variant-numeric:tabular-nums; }
-  @media(min-width:520px){ .big{ font-size:140px; } }
+  .status.live .dot { background:var(--green); box-shadow:0 0 10px var(--green); }
+  .sub { color:var(--dim); font-size:.78rem; margin-top:7px; letter-spacing:.04em; }
+  .cnt { text-align:right; }
+  .big { font-size:46px; line-height:1; font-weight:800; font-variant-numeric:tabular-nums; }
+  .accent { color:var(--accent); }
+  .lab { color:var(--muted); font-size:.6rem; letter-spacing:.16em; text-transform:uppercase; margin-top:5px; }
   @media (prefers-reduced-motion: no-preference){
     .big.pop { animation:pop .5s ease-out; }
-    @keyframes pop { 0%{ transform:scale(1); text-shadow:none; }
-      30%{ transform:scale(1.14); text-shadow:0 0 42px rgba(211,242,75,.85); }
-      100%{ transform:scale(1); text-shadow:none; } }
+    @keyframes pop { 0%{ transform:scale(1); } 30%{ transform:scale(1.16);
+      text-shadow:0 0 34px rgba(156,88,218,.8); } 100%{ transform:scale(1); text-shadow:none; } }
   }
-  .tiles { display:grid; grid-template-columns:repeat(4,1fr); gap:8px; margin:14px 0 4px; }
-  .tile { background:var(--panel); border:1px solid var(--line); border-radius:10px;
-    padding:10px 4px 8px; text-align:center; }
+  .tiles { display:grid; grid-template-columns:repeat(4,1fr); gap:10px; margin-bottom:8px; }
+  .tile { background:var(--panel); border:1px solid var(--line); border-radius:9px;
+    padding:14px 6px 12px; text-align:center; }
   .tile .tn { font-size:1.5rem; font-weight:800; font-variant-numeric:tabular-nums; }
-  .tile .tl { font-size:.58rem; letter-spacing:.12em; text-transform:uppercase;
-    color:var(--muted); margin-top:2px; }
-  .tile.down .tn { color:#aab4bd; }
-  .tile.precision .tn { color:var(--accent); }
-  .tile.finisher .tn { color:#f5a623; }
-  .tile.assist .tn { color:#37cabb; }
-  .accent { color:var(--accent); }
-  .lab { color:var(--muted); font-size:.68rem; letter-spacing:.14em; text-transform:uppercase; margin-top:8px; }
-  .sub { color:var(--muted); font-size:.82rem; margin:4px 0 16px; }
-  .clipbtn { background:var(--accent); color:#0b0f12; border:none; border-radius:10px;
-    padding:14px 28px; font:inherit; font-size:.9rem; font-weight:700; letter-spacing:.08em;
-    text-transform:uppercase; cursor:pointer; margin-bottom:16px;
-    transition: opacity .15s, transform .1s; }
-  .clipbtn:active { transform:scale(.95); opacity:.85; }
-  .clipbtn.fired { background:#5bd66b; }
-  .btnrow { display:flex; gap:10px; justify-content:center; margin-bottom:16px; }
-  .fsbtn { background:var(--panel); color:var(--muted); border:1px solid var(--line);
-    border-radius:8px; padding:7px 14px; font:inherit; font-size:.75rem;
-    cursor:pointer; }
-  .hint { color:var(--muted); font-size:.72rem; margin-top:22px; opacity:.8; }
-  .reels { text-align:left; margin-bottom:16px; }
-  .reels h3 { color:var(--muted); font-size:.68rem; letter-spacing:.14em;
-    text-transform:uppercase; margin:0 0 8px 2px; }
-  .reelrow { background:var(--panel); border:1px solid var(--accent); border-radius:10px;
-    padding:12px 14px; display:flex; align-items:center; gap:12px; cursor:pointer;
-    margin-bottom:8px; }
+  .tile .tl { font-size:.56rem; letter-spacing:.12em; text-transform:uppercase; color:var(--muted); margin-top:5px; }
+  .tile.down .tn { color:#c7ccd6; } .tile.precision .tn { color:var(--accent); }
+  .tile.finisher .tn { color:#f5a623; } .tile.assist .tn { color:#37cabb; }
+  .seclbl { color:var(--dim); font-size:.62rem; letter-spacing:.16em; text-transform:uppercase;
+    margin:24px 0 10px; }
+  .feed { display:flex; flex-direction:column; gap:5px; }
+  .row { background:var(--panel); border:1px solid var(--line2); border-radius:7px;
+    padding:11px 15px; display:flex; align-items:center; gap:12px; font-size:.9rem; }
+  .row.precision { border-color:var(--accent); }
+  .row .t { color:var(--dim); font-size:.72rem; font-variant-numeric:tabular-nums; }
+  .badge { font-size:.6rem; letter-spacing:.1em; text-transform:uppercase; padding:3px 8px;
+    border-radius:4px; background:#1c2630; color:var(--muted); white-space:nowrap; }
+  .precision .badge { background:var(--accent); color:#0b0f12; }
+  .finisher .badge { background:#f5a623; color:#0b0f12; }
+  .assist .badge { background:#37cabb; color:#0b0f12; }
+  .skull { height:16px; vertical-align:middle; }
+  .empty { color:var(--dim); padding:22px 4px; font-size:.85rem; }
+  .reels { margin-top:4px; }
+  .reelrow { background:var(--panel); border:1px solid var(--accent); border-radius:9px;
+    padding:12px 15px; display:flex; align-items:center; gap:12px; cursor:pointer; margin-bottom:7px; }
   .reelrow .play { color:var(--accent); font-size:1.1rem; }
-  .reelrow .t { color:var(--muted); font-size:.75rem; margin-left:auto; }
-  .modal { display:none; position:fixed; inset:0; background:rgba(0,0,0,.92);
-    z-index:50; align-items:center; justify-content:center; flex-direction:column;
-    padding:16px; }
+  .reelrow .t { color:var(--muted); font-size:.72rem; margin-left:auto; }
+  .hint { color:var(--dim); font-size:.7rem; margin-top:26px; line-height:1.5; opacity:.85; }
+  .modal { display:none; position:fixed; inset:0; background:rgba(0,0,0,.93);
+    z-index:50; align-items:center; justify-content:center; flex-direction:column; padding:16px; }
   .modal.open { display:flex; }
-  .modal video { width:100%; max-width:900px; max-height:75vh; border-radius:12px;
-    background:#000; }
+  .modal video { width:100%; max-width:900px; max-height:75vh; border-radius:12px; background:#000; }
   .modal .mlabel { color:var(--text); font-size:.85rem; margin:14px 0 10px; }
   .modal .close { background:var(--panel); color:var(--text); border:1px solid var(--line);
     border-radius:8px; padding:10px 26px; font:inherit; font-size:.8rem; cursor:pointer; }
   .settings { background:var(--panel); border:1px solid var(--line); border-radius:14px;
-    padding:18px; max-width:480px; width:100%; max-height:80vh; overflow-y:auto;
-    text-align:left; }
-  .settings h2 { margin:0 0 14px; font-size:.85rem; letter-spacing:.14em;
-    text-transform:uppercase; color:var(--accent); }
-  .modehead { color:var(--muted); font-size:.62rem; letter-spacing:.14em;
-    text-transform:uppercase; margin:2px 0 8px; }
+    padding:18px; max-width:480px; width:100%; max-height:80vh; overflow-y:auto; text-align:left; }
+  .settings h2 { margin:0 0 14px; font-size:.85rem; letter-spacing:.14em; text-transform:uppercase; color:var(--accent); }
+  .modehead { color:var(--muted); font-size:.62rem; letter-spacing:.14em; text-transform:uppercase; margin:2px 0 8px; }
   .moderow { display:flex; align-items:center; gap:12px; padding:6px 0; }
-  .modebtn { flex:0 0 92px; background:var(--bg); color:var(--text);
-    border:1px solid var(--line); border-radius:8px; padding:9px 0;
-    font:inherit; font-size:.7rem; font-weight:700; letter-spacing:.1em;
-    cursor:pointer; }
+  .modebtn { flex:0 0 92px; background:var(--bg); color:var(--text); border:1px solid var(--line);
+    border-radius:8px; padding:9px 0; font:inherit; font-size:.7rem; font-weight:700; letter-spacing:.1em; cursor:pointer; }
   .modebtn.active { background:var(--accent); color:var(--bg); border-color:var(--accent); }
   .modedesc { color:var(--muted); font-size:.68rem; line-height:1.35; }
-  .setrow { display:flex; align-items:center; justify-content:space-between;
-    gap:12px; padding:11px 2px; border-bottom:1px solid var(--line); font-size:.85rem; }
+  .setrow { display:flex; align-items:center; justify-content:space-between; gap:12px;
+    padding:11px 2px; border-bottom:1px solid var(--line); font-size:.85rem; }
   .setrow:last-of-type { border-bottom:none; }
   .setrow input[type=number] { width:76px; background:var(--bg); color:var(--text);
-    border:1px solid var(--line); border-radius:6px; padding:7px 9px; font:inherit;
-    font-size:.85rem; text-align:center; }
+    border:1px solid var(--line); border-radius:6px; padding:7px 9px; font:inherit; font-size:.85rem; text-align:center; }
   .switch { position:relative; width:52px; height:30px; flex:none; }
   .switch input { opacity:0; width:0; height:0; }
-  .slider { position:absolute; inset:0; background:var(--line); border-radius:15px;
-    cursor:pointer; transition:background .15s; }
-  .slider:before { content:''; position:absolute; width:24px; height:24px; left:3px;
-    top:3px; background:var(--muted); border-radius:50%; transition:transform .15s, background .15s; }
+  .slider { position:absolute; inset:0; background:var(--line); border-radius:15px; cursor:pointer; transition:background .15s; }
+  .slider:before { content:''; position:absolute; width:24px; height:24px; left:3px; top:3px;
+    background:var(--muted); border-radius:50%; transition:transform .15s, background .15s; }
   .switch input:checked + .slider { background:var(--accent); }
   .switch input:checked + .slider:before { transform:translateX(22px); background:#0b0f12; }
-  .savedmsg { color:var(--accent); font-size:.75rem; text-align:center; margin-top:10px;
-    opacity:0; transition:opacity .3s; }
+  .savedmsg { color:var(--accent); font-size:.75rem; text-align:center; margin-top:10px; opacity:0; transition:opacity .3s; }
   .savedmsg.show { opacity:1; }
-  .help h3 { color:var(--accent); font-size:.72rem; letter-spacing:.14em;
-    text-transform:uppercase; margin:16px 0 6px; }
+  .help h3 { color:var(--accent); font-size:.72rem; letter-spacing:.14em; text-transform:uppercase; margin:16px 0 6px; }
   .help h3:first-of-type { margin-top:0; }
   .help p { color:var(--text); font-size:.82rem; line-height:1.5; margin:0 0 4px; }
-  .help .m { color:var(--muted); }
-  .help code { color:var(--accent); font-size:.78rem; }
-  .feed { text-align:left; display:flex; flex-direction:column; gap:8px; }
-  .row { background:var(--panel); border:1px solid var(--line); border-radius:10px;
-    padding:11px 14px; display:flex; align-items:center; gap:12px; }
-  .row.precision { border-color:var(--accent); }
-  .badge { font-size:.62rem; letter-spacing:.1em; text-transform:uppercase; padding:3px 8px;
-    border-radius:5px; background:#1c2630; color:var(--muted); white-space:nowrap; }
-  .precision .badge { background:var(--accent); color:#0b0f12; }
-  .finisher .badge { background:#f5a623; color:#0b0f12; }
-  .assist .badge { background:#37cabb; color:#0b0f12; }
-  .row .t { color:var(--muted); font-size:.75rem; margin-left:auto; font-variant-numeric:tabular-nums; }
-  .skull { height:18px; vertical-align:middle; }
-  .empty { color:var(--muted); padding:30px; }
-</style></head><body><div class="wrap">
-  <header><img src="/wordmark.png" alt="MARATHON"></header>
-  <div class="status" id="status"><span class="dot"></span><span id="statustext">CONNECTING</span></div>
-  <div><div class="big accent" id="count">0</div><div class="lab">Kills</div></div>
-  <div class="sub" id="sub">&nbsp;</div>
-  <div class="tiles">
-    <div class="tile down"><div class="tn" id="t_down">0</div><div class="tl">Downs</div></div>
-    <div class="tile precision"><div class="tn" id="t_precision">0</div><div class="tl">Precision</div></div>
-    <div class="tile finisher"><div class="tn" id="t_finisher">0</div><div class="tl">Finishers</div></div>
-    <div class="tile assist"><div class="tn" id="t_assist">0</div><div class="tl">Assists</div></div>
-  </div>
-  <div class="btnrow">
-    <button class="clipbtn" id="clip" onclick="saveClip()">SAVE CLIP</button>
-    <button class="clipbtn" id="addk" onclick="addKill()">+1 KILL</button>
-  </div>
-  <div class="btnrow">
-    <button class="fsbtn" id="snd" onclick="toggleSound()">SOUND: ON</button>
-    <button class="fsbtn" onclick="openSettings()">Settings</button>
-    <button class="fsbtn" onclick="location.href='/stats'">Stats</button>
-    <button class="fsbtn" onclick="location.href='/archive'">Archive</button>
-    <button class="fsbtn" onclick="openHelp()">How to use</button>
-    <button class="fsbtn" id="fs" onclick="goFull()">Full screen</button>
-  </div>
-  <div class="reels" id="reels" style="display:none"><h3>Match Highlights</h3><div id="reellist"></div></div>
-  <div class="reels" id="replays" style="display:none"><h3>Instant Replays</h3><div id="replaylist"></div></div>
-  <div class="feed" id="feed"><div class="empty">Waiting for kills...</div></div>
-  <div class="hint" id="hint">iPad: tap Share &rarr; Add to Home Screen for full screen.
-    Screen still dimming? Settings &rarr; Display &amp; Brightness &rarr; Auto-Lock &rarr; Never (the guaranteed fix).</div>
+  .help .m { color:var(--muted); } .help code { color:var(--accent); font-size:.78rem; }
+  @media(max-width:760px){
+    .app { flex-direction:column; }
+    .rail { width:auto; border-right:none; border-bottom:1px solid var(--line2); padding-bottom:12px; }
+    .nav { flex-direction:row; overflow-x:auto; gap:6px; }
+    .nav a { white-space:nowrap; padding:9px 12px; }
+    .nav a .i { display:none; }
+    .railfoot { flex-direction:row; margin-top:12px; }
+    .railfoot .clipbtn { flex:1; }
+    .minirow { flex:1; }
+    .main { max-width:none; padding:20px 18px; }
+    .big { font-size:38px; }
+  }
+</style></head><body>
+<div class="app">
+  <aside class="rail">
+    <div class="brand"><img src="/skull.png" alt=""><span class="wm">WITNESS</span></div>
+    <nav class="nav">
+      <a class="on"><span class="i"></span>Live</a>
+      <a onclick="location.href='/stats'"><span class="i"></span>Stats</a>
+      <a onclick="location.href='/archive'"><span class="i"></span>Archive</a>
+      <a onclick="openSettings()"><span class="i"></span>Settings</a>
+      <a onclick="openHelp()"><span class="i"></span>How to use</a>
+    </nav>
+    <div class="railfoot">
+      <button class="clipbtn" id="clip" onclick="saveClip()">SAVE CLIP</button>
+      <button class="clipbtn" id="addk" onclick="addKill()">+1 KILL</button>
+      <div class="minirow">
+        <button class="fsbtn" id="snd" onclick="toggleSound()">SOUND: ON</button>
+        <button class="fsbtn" id="fs" onclick="goFull()">Full</button>
+      </div>
+    </div>
+  </aside>
+  <main class="main">
+    <div class="top">
+      <div class="status" id="status">
+        <div class="st"><span class="dot"></span><span id="statustext">CONNECTING</span></div>
+        <div class="sub" id="sub">&nbsp;</div>
+      </div>
+      <div class="cnt"><div class="big accent" id="count">0</div><div class="lab">Kills</div></div>
+    </div>
+    <div class="tiles">
+      <div class="tile down"><div class="tn" id="t_down">0</div><div class="tl">Downs</div></div>
+      <div class="tile precision"><div class="tn" id="t_precision">0</div><div class="tl">Precision</div></div>
+      <div class="tile finisher"><div class="tn" id="t_finisher">0</div><div class="tl">Finishers</div></div>
+      <div class="tile assist"><div class="tn" id="t_assist">0</div><div class="tl">Assists</div></div>
+    </div>
+    <div class="reels" id="reels" style="display:none"><p class="seclbl">Match Highlights</p><div id="reellist"></div></div>
+    <div class="reels" id="replays" style="display:none"><p class="seclbl">Instant Replays</p><div id="replaylist"></div></div>
+    <p class="seclbl">Recent</p>
+    <div class="feed" id="feed"><div class="empty">Waiting for kills…</div></div>
+    <div class="hint" id="hint">iPad: tap Share &rarr; Add to Home Screen for full screen.
+      Screen still dimming? Settings &rarr; Display &amp; Brightness &rarr; Auto-Lock &rarr; Never.</div>
+  </main>
 </div>
 <div class="modal" id="modal">
   <video id="reelvid" controls playsinline></video>
@@ -956,7 +978,7 @@ PAGE = """<!doctype html><html lang="en"><head><meta charset="utf-8">
       });
       var st = document.querySelector('.status');
       st.className = 'status' + (d.running ? ' live' : '');
-      document.getElementById('statustext').textContent = d.running ? 'RUNNING' : 'STOPPED';
+      document.getElementById('statustext').textContent = d.running ? 'WATCHING' : 'STOPPED';
       document.getElementById('sub').textContent =
         d.running && d.elapsed ? 'session ' + fmtElapsed(d.elapsed) + ' \\u00b7 started ' + d.started
         : (d.started ? 'started ' + d.started : '\\u00a0');
