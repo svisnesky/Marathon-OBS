@@ -168,6 +168,7 @@ class LiveState:
         self._replay_seq = 0
         self.tag_counts = {}  # kill-type breakdown for the dashboard tiles
         self.update_msg = ""  # auto-updater status, shown in the dashboard
+        self.version = ""     # current build (short sha), shown bottom-right
         self._cfg = None       # live config dict (bound per session)
         self._save_cb = None   # persists changed settings to disk
 
@@ -315,7 +316,7 @@ class LiveState:
                 elapsed = int(time.monotonic() - self._mono)
             return {"running": self.running, "count": self.count,
                     "started": self.started, "elapsed": elapsed,
-                    "update": self.update_msg,
+                    "update": self.update_msg, "version": self.version,
                     "tags": dict(self.tag_counts),
                     "events": list(self.events),
                     "reels": [{"i": i, "label": r["label"], "time": r["time"]}
@@ -546,6 +547,11 @@ def local_ip():
 def start_web(state, port, base_dir, host="0.0.0.0"):
     imgs = {"/skull.png": "witness_logo.png",
             "/wordmark.png": "witness_wordmark.png"}
+    try:                          # show the current build in the corner
+        with open(os.path.join(base_dir, ".app_version"), encoding="utf-8") as f:
+            state.version = f.read().strip()[:7]
+    except Exception:
+        state.version = "dev"
 
     class Handler(BaseHTTPRequestHandler):
         def log_message(self, *a):
@@ -894,6 +900,8 @@ PAGE = """<!doctype html><html lang="en"><head><meta charset="utf-8">
   .reelrow .play { color:var(--accent); font-size:1.1rem; }
   .reelrow .t { color:var(--muted); font-size:.72rem; margin-left:auto; }
   .hint { color:var(--dim); font-size:.7rem; margin-top:26px; line-height:1.5; opacity:.85; }
+  .ver { position:fixed; bottom:9px; right:14px; font-size:.6rem; color:var(--dim);
+    letter-spacing:.08em; opacity:.6; z-index:5; }
   .modal { display:none; position:fixed; inset:0; background:rgba(0,0,0,.93);
     z-index:50; align-items:center; justify-content:center; flex-direction:column; padding:16px; }
   .modal.open { display:flex; }
@@ -980,6 +988,7 @@ PAGE = """<!doctype html><html lang="en"><head><meta charset="utf-8">
     <div class="reels" id="replays" style="display:none"><p class="seclbl">Instant Replays</p><div id="replaylist"></div></div>
     <p class="seclbl">Recent</p>
     <div class="feed" id="feed"><div class="empty">Waiting for kills…</div></div>
+    <div class="ver" id="ver"></div>
     <div class="hint" id="updmsg" style="color:var(--dim)"></div>
     <div class="hint" id="hint">iPad: tap Share &rarr; Add to Home Screen for full screen.
       Screen still dimming? Settings &rarr; Display &amp; Brightness &rarr; Auto-Lock &rarr; Never.</div>
@@ -1046,6 +1055,7 @@ PAGE = """<!doctype html><html lang="en"><head><meta charset="utf-8">
         d.running && d.elapsed ? 'SESSION  ' + fmtElapsed(d.elapsed)
         : (d.running ? 'STARTING\\u2026' : 'Press START to begin watching');
       if (d.update){ document.getElementById('updmsg').textContent = 'Updater: ' + d.update; }
+      if (d.version){ document.getElementById('ver').textContent = 'WITNESS \\u00b7 ' + d.version; }
       var rb = document.getElementById('runbtn');
       if (!runBusy){
         rb.className = 'runbtn' + (d.running ? ' on' : '');
