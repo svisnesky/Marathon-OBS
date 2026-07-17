@@ -98,6 +98,7 @@ class ControlPanel:
                 r.iconbitmap(ico)
         except Exception:
             pass
+        _dark_titlebar(r)   # match the app instead of a light system bar
 
         body = tk.Frame(r, bg=BG)
         body.pack(fill="both", expand=True)
@@ -116,15 +117,12 @@ class ControlPanel:
         brand.pack(fill="x", padx=18, pady=(20, 16))
         try:
             self._icon = tk.PhotoImage(file=os.path.join(BASE, "witness_logo_small.png"))
-            tk.Label(brand, image=self._icon, bg=RAIL_BG).pack(side="left", padx=(0, 10))
+            tk.Label(brand, image=self._icon, bg=RAIL_BG).pack(side="left", padx=(0, 11))
         except Exception:
             pass
-        try:
-            self._wm = tk.PhotoImage(file=os.path.join(BASE, "witness_wordmark_small.png"))
-            tk.Label(brand, image=self._wm, bg=RAIL_BG).pack(side="left")
-        except Exception:
-            tk.Label(brand, text="WITNESS", bg=RAIL_BG, fg=ACCENT,
-                     font=("Segoe UI Black", 14, "bold")).pack(side="left")
+        # text wordmark (the image clipped inside the narrow rail)
+        tk.Label(brand, text="WITNESS", bg=RAIL_BG, fg=ACCENT,
+                 font=("Segoe UI", 15, "bold")).pack(side="left")
 
         nav = tk.Frame(rail, bg=RAIL_BG)
         nav.pack(fill="x", padx=12, pady=(6, 0))
@@ -479,6 +477,7 @@ class SettingsWindow:
         w.configure(bg=BG)
         w.geometry("460x520")
         w.transient(parent)
+        _dark_titlebar(w)
 
         tk.Label(w, text="SETTINGS", bg=BG, fg=ACCENT,
                  font=("Consolas", 11, "bold")).pack(anchor="w", padx=20, pady=(16, 4))
@@ -585,6 +584,7 @@ class HelpWindow:
         w.configure(bg=BG)
         w.geometry("560x560")
         w.transient(parent)
+        _dark_titlebar(w)
         tk.Label(w, text="HOW TO USE", bg=BG, fg=ACCENT,
                  font=("Consolas", 11, "bold")).pack(anchor="w", padx=20, pady=(16, 6))
         t = scrolledtext.ScrolledText(w, bg=PANEL, fg=TEXT, relief="flat",
@@ -725,6 +725,25 @@ def _play_boom(wav):
         import winsound
         winsound.PlaySound(wav, winsound.SND_FILENAME | winsound.SND_ASYNC
                            | winsound.SND_NODEFAULT)
+    except Exception:
+        pass
+
+
+def _dark_titlebar(win):
+    """Paint the native Windows title bar dark so it matches the app instead
+    of the light 'Windows 95' grey. No-op on non-Windows / older builds."""
+    if sys.platform != "win32":
+        return
+    try:
+        import ctypes
+        win.update_idletasks()
+        hwnd = ctypes.windll.user32.GetParent(win.winfo_id())
+        val = ctypes.c_int(1)
+        for attr in (20, 19):   # DWMWA_USE_IMMERSIVE_DARK_MODE (20 new, 19 old)
+            ctypes.windll.dwmapi.DwmSetWindowAttribute(
+                hwnd, attr, ctypes.byref(val), ctypes.sizeof(val))
+        # nudge a redraw so the bar repaints immediately
+        win.withdraw(); win.deiconify()
     except Exception:
         pass
 

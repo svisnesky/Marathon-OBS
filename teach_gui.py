@@ -75,6 +75,18 @@ class TeachWizard:
                 file=os.path.join(BASE, "witness_logo.png")))
         except Exception:
             pass
+        if sys.platform == "win32":
+            try:
+                import ctypes
+                root.update_idletasks()
+                hwnd = ctypes.windll.user32.GetParent(root.winfo_id())
+                v = ctypes.c_int(1)
+                for a in (20, 19):
+                    ctypes.windll.dwmapi.DwmSetWindowAttribute(
+                        hwnd, a, ctypes.byref(v), ctypes.sizeof(v))
+                root.withdraw(); root.deiconify()
+            except Exception:
+                pass
 
         self._build_header()
         self.body = tk.Frame(root, bg=BG)
