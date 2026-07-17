@@ -167,6 +167,7 @@ class LiveState:
         self.replays = []  # [{id, label, path, time}] — per-kill instant replays
         self._replay_seq = 0
         self.tag_counts = {}  # kill-type breakdown for the dashboard tiles
+        self.update_msg = ""  # auto-updater status, shown in the dashboard
         self._cfg = None       # live config dict (bound per session)
         self._save_cb = None   # persists changed settings to disk
 
@@ -314,6 +315,7 @@ class LiveState:
                 elapsed = int(time.monotonic() - self._mono)
             return {"running": self.running, "count": self.count,
                     "started": self.started, "elapsed": elapsed,
+                    "update": self.update_msg,
                     "tags": dict(self.tag_counts),
                     "events": list(self.events),
                     "reels": [{"i": i, "label": r["label"], "time": r["time"]}
@@ -978,6 +980,7 @@ PAGE = """<!doctype html><html lang="en"><head><meta charset="utf-8">
     <div class="reels" id="replays" style="display:none"><p class="seclbl">Instant Replays</p><div id="replaylist"></div></div>
     <p class="seclbl">Recent</p>
     <div class="feed" id="feed"><div class="empty">Waiting for kills…</div></div>
+    <div class="hint" id="updmsg" style="color:var(--dim)"></div>
     <div class="hint" id="hint">iPad: tap Share &rarr; Add to Home Screen for full screen.
       Screen still dimming? Settings &rarr; Display &amp; Brightness &rarr; Auto-Lock &rarr; Never.</div>
   </main>
@@ -1042,6 +1045,7 @@ PAGE = """<!doctype html><html lang="en"><head><meta charset="utf-8">
       document.getElementById('sub').textContent =
         d.running && d.elapsed ? 'SESSION  ' + fmtElapsed(d.elapsed)
         : (d.running ? 'STARTING\\u2026' : 'Press START to begin watching');
+      if (d.update){ document.getElementById('updmsg').textContent = 'Updater: ' + d.update; }
       var rb = document.getElementById('runbtn');
       if (!runBusy){
         rb.className = 'runbtn' + (d.running ? ' on' : '');

@@ -910,6 +910,7 @@ def _run_webview():
         app._web_state = st
         app._web_server = srv
         st.bind_config(cfg, app.save_setting_overrides)
+        st.update_msg = UPDATE_MSG or "(no update message)"
         try:                       # so Archive/Reels show past sessions on open
             st.record_dir = app.cached_record_dir()
         except Exception:
