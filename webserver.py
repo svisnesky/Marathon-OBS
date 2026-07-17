@@ -37,6 +37,53 @@ SETTINGS = {
     "track_names": (True, bool),            # read gamertags off the kill feed
 }
 
+# One-tap MODES: named bundles applied over the toggles above (through the
+# same validated apply path). A mode is a starting point, not a lock — every
+# setting stays individually adjustable afterward.
+MODES = [
+    {"key": "sweat", "label": "SWEAT",
+     "desc": "Clips only. Nothing on screen, nothing in your ears, zero "
+             "mid-match rendering. Session reel still builds when you stop.",
+     "set": {"show_overlays": False, "overlay_multikill": False,
+             "overlay_clip_saved": False, "overlay_reel_ready": False,
+             "announcer_medals": False, "team_wipe": False,
+             "play_sound": False, "make_match_reels": False,
+             "make_shorts": False, "make_montage": False, "make_card": False,
+             "track_names": False, "reel_announcer": False}},
+    {"key": "standard", "label": "STANDARD",
+     "desc": "The shipped defaults: clips, reels, stats, name tracking, "
+             "quiet visual chips. No voices.",
+     "set": {"show_overlays": True, "overlay_multikill": True,
+             "overlay_clip_saved": True, "overlay_reel_ready": True,
+             "announcer_medals": False, "team_wipe": True,
+             "play_sound": False, "make_match_reels": True,
+             "reel_music": True, "reel_announcer": True,
+             "make_shorts": False, "make_montage": False, "make_card": True,
+             "capture_exfil_stats": True, "track_names": True}},
+    {"key": "showtime", "label": "SHOWTIME",
+     "desc": "The full broadcast: medal voices, banners, team wipes, "
+             "announced reels. Best with friends watching the dashboard.",
+     "set": {"show_overlays": True, "overlay_multikill": True,
+             "overlay_clip_saved": True, "overlay_reel_ready": True,
+             "announcer_medals": True, "team_wipe": True,
+             "play_sound": False, "make_match_reels": True,
+             "reel_music": True, "reel_announcer": True,
+             "make_shorts": False, "make_montage": False, "make_card": True,
+             "capture_exfil_stats": True, "track_names": True}},
+    {"key": "creator", "label": "CREATOR",
+     "desc": "Showtime plus every render: vertical Shorts, montage, match "
+             "cards. Maximum footage out the other end.",
+     "set": {"show_overlays": True, "overlay_multikill": True,
+             "overlay_clip_saved": True, "overlay_reel_ready": True,
+             "announcer_medals": True, "team_wipe": True,
+             "play_sound": False, "make_match_reels": True,
+             "reel_music": True, "reel_announcer": True,
+             "make_shorts": True, "shorts_labels": True,
+             "make_montage": True, "make_card": True,
+             "capture_exfil_stats": True, "track_names": True}},
+]
+
+
 # Theme: per-game look. Game profiles (games/<game>.yaml) may carry a
 # theme: block; these are Marathon's colors and the fallback for any key a
 # profile doesn't set. Values are swapped into the page CSS at request time.
@@ -519,6 +566,7 @@ def start_web(state, port, base_dir, host="0.0.0.0"):
                     self._send(json.dumps({
                         "settings": state.get_settings(),
                         "meta": SETTINGS_META,
+                        "modes": MODES,
                     }).encode(), "application/json", cache=False)
                 elif path == "/stats":
                     self._send(apply_theme(_stats_page(base_dir),
@@ -775,6 +823,15 @@ PAGE = """<!doctype html><html lang="en"><head><meta charset="utf-8">
     text-align:left; }
   .settings h2 { margin:0 0 14px; font-size:.85rem; letter-spacing:.14em;
     text-transform:uppercase; color:var(--accent); }
+  .modehead { color:var(--muted); font-size:.62rem; letter-spacing:.14em;
+    text-transform:uppercase; margin:2px 0 8px; }
+  .moderow { display:flex; align-items:center; gap:12px; padding:6px 0; }
+  .modebtn { flex:0 0 92px; background:var(--bg); color:var(--text);
+    border:1px solid var(--line); border-radius:8px; padding:9px 0;
+    font:inherit; font-size:.7rem; font-weight:700; letter-spacing:.1em;
+    cursor:pointer; }
+  .modebtn.active { background:var(--accent); color:var(--bg); border-color:var(--accent); }
+  .modedesc { color:var(--muted); font-size:.68rem; line-height:1.35; }
   .setrow { display:flex; align-items:center; justify-content:space-between;
     gap:12px; padding:11px 2px; border-bottom:1px solid var(--line); font-size:.85rem; }
   .setrow:last-of-type { border-bottom:none; }
@@ -1002,11 +1059,36 @@ PAGE = """<!doctype html><html lang="en"><head><meta charset="utf-8">
   }
 
   // --- settings panel ---
+  var MODE_DATA = [];
+  function modeIsActive(m, settings){
+    return Object.keys(m.set).every(function(k){ return settings[k] === m.set[k]; });
+  }
+  async function applyMode(key){
+    var m = MODE_DATA.find(function(x){ return x.key === key; });
+    if (!m) return;
+    try {
+      await fetch('/config', {method:'POST', headers:{'Content-Type':'application/json'},
+                              body: JSON.stringify(m.set)});
+      var msg = document.getElementById('savedmsg');
+      msg.classList.add('show');
+      setTimeout(function(){ msg.classList.remove('show'); }, 1800);
+      openSettings();   // re-render switches + active-mode highlight
+    } catch(e){}
+  }
   async function openSettings(){
     try {
       var r = await fetch('/config', {cache:'no-store'});
       var d = await r.json();
-      var html = d.meta.map(function(m){
+      MODE_DATA = d.modes || [];
+      var modes = MODE_DATA.map(function(m){
+        var on = modeIsActive(m, d.settings);
+        return '<div class="moderow"><button class="modebtn'+(on ? ' active' : '')+'"'+
+               ' onclick="applyMode(\\''+m.key+'\\')">'+m.label+'</button>'+
+               '<span class="modedesc">'+m.desc+'</span></div>';
+      }).join('');
+      if (modes) modes = '<div class="modehead">MODES — one tap, tweak after</div>'+modes+
+                         '<div class="modehead" style="margin-top:14px">EVERYTHING ELSE</div>';
+      var html = modes + d.meta.map(function(m){
         var key = m[0], label = m[1], val = d.settings[key];
         if (typeof val === 'boolean'){
           return '<div class="setrow"><span>'+label+'</span>'+
