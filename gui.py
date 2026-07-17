@@ -915,7 +915,11 @@ def _run_webview():
         webview.create_window("WITNESS", f"http://localhost:{port}",
                               width=960, height=660, min_size=(820, 560),
                               background_color="#0b0f12")
-        webview.start()          # blocks until the window is closed
+        ico = os.path.join(BASE, "witness.ico")
+        try:
+            webview.start(icon=ico)   # window / taskbar icon
+        except TypeError:             # older pywebview without the icon arg
+            webview.start()
         return True
     except Exception as e:
         print(f"(webview unavailable, using the control panel: {e})")
