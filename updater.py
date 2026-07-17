@@ -25,7 +25,12 @@ RAW = f"https://raw.githubusercontent.com/{REPO}"
 VERSION_FILE = ".app_version"
 
 # Only files with these extensions are managed by the updater.
-EXTS = (".py", ".yaml", ".md", ".txt", ".bat", ".png", ".wav")
+EXTS = (".py", ".yaml", ".md", ".txt", ".bat", ".png", ".wav", ".gif", ".ico")
+
+# Binary assets that must exist locally. If any is missing we re-sync even
+# when the version sha matches — self-heals installs whose OLD updater had a
+# narrower EXTS whitelist and skipped these (e.g. the splash gif + app icon).
+REQUIRED = ("witness_splash.gif", "witness.ico")
 # Repo files that must never overwrite local state.
 SKIP = {"settings_override.yaml", "session_log.csv"}
 # Written on first install only, then left alone — a user's edits (OBS
@@ -68,7 +73,9 @@ def check_and_update(base_dir: str) -> tuple[bool, str]:
                 local = f.read().strip()
         except Exception:
             local = ""
-    if local == latest:
+    missing = [f for f in REQUIRED
+               if not os.path.exists(os.path.join(base_dir, f))]
+    if local == latest and not missing:
         return False, f"Up to date ({latest[:7]})."
 
     try:
