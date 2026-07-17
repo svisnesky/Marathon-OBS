@@ -37,6 +37,7 @@ SETTINGS = {
     "track_names": (True, bool),            # read gamertags off the kill feed
     "auto_sweat": (True, bool),             # last-one-standing = flair mutes
     "splash_sound": (True, bool),           # boot-splash boom (Windows)
+    "youtube_upload_session_reel": (False, bool),  # auto-upload session reel
 }
 
 # One-tap MODES: named bundles applied over the toggles above (through the
@@ -143,6 +144,7 @@ SETTINGS_META = [
     ("track_names", "Name tracking (kill feed)"),
     ("auto_sweat", "Auto-sweat (clutch focus)"),
     ("splash_sound", "Boot splash sound"),
+    ("youtube_upload_session_reel", "Auto-upload to YouTube"),
     ("play_sound", "PC beep on kill"),
 ]
 
