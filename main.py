@@ -1416,7 +1416,9 @@ def _tray_icon_image(base: str, cfg: dict):
     size = 64
     canvas = Image.new("RGBA", (size, size), (0, 0, 0, 0))
     try:
-        p = os.path.join(base, cfg.get("app_icon", "marathon_skull.png"))
+        p = os.path.join(base, cfg.get("app_icon", "witness_logo.png"))
+        if not os.path.exists(p):
+            p = os.path.join(base, "marathon_skull.png")
         im = Image.open(p).convert("RGBA")
         scale = min(size / im.width, size / im.height)
         nw, nh = max(1, round(im.width * scale)), max(1, round(im.height * scale))
@@ -1457,7 +1459,7 @@ def run_tray(cfg: dict, dry_run: bool):
         ic = state["icon"]
         if ic is not None:
             try:
-                ic.title = f"Marathon Kill Recorder — {n} kills"
+                ic.title = f"WITNESS — {n} kills"
             except Exception:
                 pass
 
@@ -1467,7 +1469,7 @@ def run_tray(cfg: dict, dry_run: bool):
 
     menu = pystray.Menu(pystray.MenuItem("Quit", on_quit))
     icon = pystray.Icon("marathon", _tray_icon_image(base, cfg),
-                        "Marathon Kill Recorder", menu)
+                        "WITNESS", menu)
     state["icon"] = icon
 
     worker = threading.Thread(

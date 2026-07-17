@@ -135,8 +135,8 @@ def build_shorts(session_dir: str, ffmpeg: str, with_labels: bool = True,
             continue
         tag, sub = "", ""
         if with_labels:
-            num, tag = _parse_name(c)
-            sub = f"KILL #{num} · {brand}" if num else brand
+            _num, tag = _parse_name(c)
+            sub = brand              # just the game name — no "KILL #N"
         if build_short(os.path.join(session_dir, c), dest, ffmpeg,
                        tag=tag, sub=sub, accent=accent):
             done += 1

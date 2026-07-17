@@ -1,4 +1,4 @@
-"""A simple control-panel window for the Marathon Kill Recorder.
+"""WITNESS — control-panel window. It sees everything.
 
 Replaces the console: big Start/Stop button, live kill count, a log pane, and
 quick buttons to open the dashboard / settings / folder. Launch with:
@@ -12,24 +12,15 @@ import queue
 import subprocess
 import sys
 import threading
+import time
 import tkinter as tk
 from tkinter import scrolledtext
 
 BASE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, BASE)
 
-# Self-update BEFORE importing app code, so fresh files actually load. If
-# anything changed, this relaunches the window on the new version.
-UPDATE_MSG = ""
-try:
-    import updater
-    UPDATE_MSG = updater.update_and_relaunch_if_needed(BASE)
-except SystemExit:
-    raise
-except Exception as _e:
-    UPDATE_MSG = f"Update check skipped: {_e}"
-
-import main as app  # noqa: E402  (reuse run_live / load_config)
+UPDATE_MSG = ""   # set during boot (behind the splash), read by ControlPanel
+app = None        # main module, imported during boot
 
 BG = "#0b0f12"
 PANEL = "#12181d"
@@ -71,31 +62,33 @@ class ControlPanel:
 
     def _build(self):
         r = self.root
-        r.title("Marathon Kill Recorder")
+        r.title("WITNESS")
         r.configure(bg=BG)
         r.geometry("580x620")
         r.minsize(520, 560)
 
-        # header: O emblem + MARATHON wordmark + subtitle
+        # header: eye badge + WITNESS wordmark + subtitle
         head = tk.Frame(r, bg=BG)
         head.pack(fill="x", padx=20, pady=(18, 8))
         try:
-            skull = tk.PhotoImage(file=os.path.join(BASE, "marathon_skull.png"))
-            self._icon_full = skull  # keep a ref for the window/taskbar icon
-            self._icon = skull.subsample(max(1, skull.height() // 46))
+            badge = tk.PhotoImage(file=os.path.join(BASE, "witness_logo.png"))
+            self._icon_full = badge  # keep a ref for the window/taskbar icon
+            self._icon = badge.subsample(max(1, badge.height() // 46))
             tk.Label(head, image=self._icon, bg=BG).pack(side="left", padx=(0, 14))
-            r.iconphoto(True, skull)
+            r.iconphoto(True, badge)
         except Exception:
             pass
         title = tk.Frame(head, bg=BG)
         title.pack(side="left", anchor="w")
         try:
-            self._wordmark = tk.PhotoImage(file=os.path.join(BASE, "marathon_wordmark.png"))
+            wm = tk.PhotoImage(file=os.path.join(BASE, "witness_wordmark.png"))
+            self._wordmark = wm.subsample(max(1, wm.height() // 26))
             tk.Label(title, image=self._wordmark, bg=BG).pack(anchor="w")
         except Exception:
-            tk.Label(title, text="MARATHON", bg=BG, fg=ACCENT,
+            tk.Label(title, text="WITNESS", bg=BG, fg=ACCENT,
                      font=("Segoe UI Black", 18, "bold")).pack(anchor="w")
-        tk.Label(title, text="KILL RECORDER // TAU CETI IV", bg=BG, fg=MUTED,
+        tk.Label(title, text="AUTO KILL RECORDER // IT SEES EVERYTHING",
+                 bg=BG, fg=MUTED,
                  font=("Consolas", 9)).pack(anchor="w", pady=(3, 0))
 
         # status + count row
@@ -440,8 +433,61 @@ class HelpWindow:
         t.configure(state="disabled")
 
 
+def _show_splash(root):
+    """Borderless WITNESS splash — covers the update check + module load."""
+    sp = tk.Toplevel(root)
+    sp.overrideredirect(True)
+    sp.configure(bg=BG)
+    w, h = 380, 300
+    x = (sp.winfo_screenwidth() - w) // 2
+    y = (sp.winfo_screenheight() - h) // 2
+    sp.geometry(f"{w}x{h}+{x}+{y}")
+    frame = tk.Frame(sp, bg=BG, highlightbackground=LINE, highlightthickness=1)
+    frame.pack(fill="both", expand=True)
+    try:
+        logo = tk.PhotoImage(file=os.path.join(BASE, "witness_logo.png"))
+        sp._logo = logo.subsample(max(1, logo.height() // 128))
+        tk.Label(frame, image=sp._logo, bg=BG).pack(pady=(38, 10))
+    except Exception:
+        tk.Label(frame, text="◉", bg=BG, fg=ACCENT,
+                 font=("Consolas", 48)).pack(pady=(38, 10))
+    tk.Label(frame, text="WITNESS", bg=BG, fg=ACCENT,
+             font=("Segoe UI Black", 22, "bold")).pack()
+    tk.Label(frame, text="IT SEES EVERYTHING", bg=BG, fg=MUTED,
+             font=("Consolas", 9)).pack(pady=(2, 12))
+    status = tk.Label(frame, text="checking for updates...", bg=BG, fg=MUTED,
+                      font=("Consolas", 8))
+    status.pack()
+    sp.update()
+    return sp, status
+
+
 def main():
+    global UPDATE_MSG, app
     root = tk.Tk()
+    root.withdraw()
+    splash, status = _show_splash(root)
+    born = time.monotonic()
+
+    # Self-update BEFORE importing app code, so fresh files actually load.
+    # If anything changed this relaunches the process (splash dies with it
+    # and the new version shows its own).
+    try:
+        import updater
+        UPDATE_MSG = updater.update_and_relaunch_if_needed(BASE)
+    except SystemExit:
+        raise
+    except Exception as e:
+        UPDATE_MSG = f"Update check skipped: {e}"
+
+    status.config(text="loading...")
+    splash.update()
+    import main as app_module
+    app = app_module
+
+    time.sleep(max(0.0, 1.2 - (time.monotonic() - born)))  # let the splash land
+    splash.destroy()
+    root.deiconify()
     ControlPanel(root)
     root.mainloop()
 

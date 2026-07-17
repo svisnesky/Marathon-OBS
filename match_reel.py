@@ -257,7 +257,7 @@ def build_match_reel(clips, out_path: str, ffmpeg: str,
     end_png = stem + "_end.png"
     brand = str((theme or {}).get("display_name") or "MARATHON").upper()
     have_end_card = _build_card(end_png, brand, "GG", "",
-                                ["AUTO KILL RECORDER"], wordmark_path,
+                                ["WITNESSED."], wordmark_path,
                                 theme=theme)
     END_SECONDS = 2.4
 

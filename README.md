@@ -1,7 +1,10 @@
-# Marathon Auto Kill Recorder
+# WITNESS
 
-Automatically clips every kill you get in **Marathon** — and turns each match
-into a highlight reel.
+<img src="witness_logo.png" width="96" align="right" alt="WITNESS">
+
+**It sees everything.** WITNESS automatically clips every kill you get —
+born in Bungie's **Marathon**, teachable to any game with a kill popup —
+and turns each match into a highlight reel.
 
 **New here? Follow [QUICKSTART.md](QUICKSTART.md)** — zero to auto-clipped
 kills in ~15 minutes, no coding.

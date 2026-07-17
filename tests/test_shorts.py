@@ -22,7 +22,7 @@ def test_ff_color():
 
 
 def test_drawtext_badge_layout():
-    chain = _drawtext("FINISHER", "KILL #3 · MARATHON",
+    chain = _drawtext("FINISHER", "MARATHON",
                       "C:/Windows/Fonts/arialbd.ttf", "0xff9d2b")
     assert "boxcolor=0xff9d2b" in chain            # themed chip
     assert "y=1336" in chain and "y=1442" in chain  # below the footage,
