@@ -200,7 +200,7 @@ class ControlPanel:
         self.status = tk.Label(stat, text=f"{self.DOT}  WATCHING", bg=BG, fg=GREEN,
                                font=("Consolas", 15, "bold"))
         self.status.pack(anchor="w")
-        self.status_sub = tk.Label(stat, text="session 0:00", bg=BG, fg=MUTED,
+        self.status_sub = tk.Label(stat, text="SESSION  0:00", bg=BG, fg=MUTED,
                                    font=("Consolas", 10))
         self.status_sub.pack(anchor="w", pady=(5, 0))
         cnt = tk.Frame(top, bg=BG)
@@ -279,7 +279,7 @@ class ControlPanel:
         if self.latest:
             tag, when = self.latest
             self.clip_title.config(text=TAG_LABEL.get(tag, tag.upper()))
-            self.clip_sub.config(text=f"saved {when} · rewatch on the dashboard")
+            self.clip_sub.config(text=f"SAVED  {when}")
 
     def _go_live(self):
         self._nav_active("Live")
@@ -422,7 +422,7 @@ class ControlPanel:
         if self.running and self.session_start and hasattr(self, "status_sub"):
             secs = int(time.monotonic() - self.session_start)
             if getattr(self, "_watching", False):
-                self.status_sub.config(text=f"session {secs // 60}:{secs % 60:02d}")
+                self.status_sub.config(text=f"SESSION  {secs // 60}:{secs % 60:02d}")
         self.root.after(1000, self._tick)
 
     def _parse_kill(self, line):
@@ -450,7 +450,7 @@ class ControlPanel:
                     if "Detecting [" in s:
                         self._watching = True
                         self._set_status(f"{self.DOT}  WATCHING", GREEN,
-                                         "session 0:00")
+                                         "SESSION  0:00")
                     if "KILL #" in s and "[" in s:
                         self._parse_kill(s)
                 elif kind == "count":
