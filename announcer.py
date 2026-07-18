@@ -24,11 +24,16 @@ DEFAULT_PITCH = "-18Hz"          # deep broadcast voice — Stan-approved
 # elevenlabs_key.txt in this folder (or the ELEVENLABS_API_KEY env var) and
 # every render upgrades automatically. Call-outs render ONCE and cache, so
 # even the free tier covers the whole medal set with room to spare.
-ELEVEN_DEFAULT_VOICE = "TsHrPyMlNFuIYnbODF01"   # "Alien Master" — ominous,
-                                                # dark and scary. The voice
-                                                # of WITNESS (Stan-cast).
+ELEVEN_DEFAULT_VOICE = "N2lVS1w4EtoT3dr4eOWO"   # "Callum" — intense, hoarse,
+                                                # dark. A PREMADE voice, so it
+                                                # works on the free tier via
+                                                # the API. The WITNESS voice.
 # The casting bench (swap via elevenlabs_voice_id in config):
-#   "6F5Zhi321D3Oq7v1oNT4"  "Hank" — strong contender, a little less ominous
+#   "TsHrPyMlNFuIYnbODF01"  "Alien Master" — the most ominous, but a LIBRARY
+#                           voice: needs a paid ElevenLabs plan to use via API.
+#   "6F5Zhi321D3Oq7v1oNT4"  "Hank" — also library (paid).
+#   Free premade alternatives (no plan needed): "JBFqnCBsd6RMkjVDRZzb" George
+#   (deep, calm authority), "pqHfZKP75CvOlQylNhV4" Bill (older, deep narrator).
 ELEVEN_FALLBACK_VOICE = "pNInz6obpgDQGcFmaJgB"  # "Adam" — premade, always
                                                 # available (library voices
                                                 # must be added per-account)
