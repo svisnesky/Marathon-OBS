@@ -155,7 +155,7 @@ def main():
         print(f"\n[OK] Rendered a test clip with voice id {want_voice}.")
         print("     Reels and call-outs will use this ElevenLabs voice.")
         if not _cfg("elevenlabs_voice_id"):
-            print("     (Built-in default 'Alien Master'. Change it with")
+            print("     (Built-in default voice. Change it with")
             print("      elevenlabs_voice_id in config.yaml.)")
         print("=" * 58)
         return
