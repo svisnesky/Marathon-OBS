@@ -93,9 +93,9 @@ MODES = [
 # theme: block; these are Marathon's colors and the fallback for any key a
 # profile doesn't set. Values are swapped into the page CSS at request time.
 THEME_DEFAULTS = {
-    "bg": "#0b0f12", "panel": "#12181d", "line": "#232d34",
-    "text": "#e8edf0", "muted": "#7d8a94",
-    "accent": "#9c58da", "danger": "#ff4d3d",
+    "bg": "#0e0e16", "panel": "#12181d", "line": "#232d34",
+    "text": "#e9e9ed", "muted": "#8a90a0",
+    "accent": "#9184d9", "danger": "#ff4d3d",
 }
 _HEX = None  # compiled lazily
 
@@ -814,185 +814,284 @@ PAGE = """<!doctype html><html lang="en"><head><meta charset="utf-8">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-<meta name="apple-mobile-web-app-title" content="Kill Feed">
+<meta name="apple-mobile-web-app-title" content="WITNESS">
 <link rel="apple-touch-icon" href="/skull.png">
 <title>WITNESS</title>
 <style>
-  :root { --bg:#0b0f12; --void:#0d1218; --panel:#12181d; --panel2:#161d26;
-    --line:#232d34; --line2:#1e2530; --text:#e8edf0; --muted:#7d8a94;
-    --dim:#5f6572; --accent:#9c58da; --green:#5bd66b; }
+  /* Broadcast palette. The seven theme keys (bg/panel/line/text/muted/accent/
+     danger) carry the exact THEME_DEFAULTS hexes so per-game apply_theme() can
+     still swap them by string replace. Everything else derives from these. */
+  :root {
+    --bg:#0e0e16; --panel:#12181d; --line:#232d34; --text:#e9e9ed;
+    --muted:#8a90a0; --accent:#9184d9; --danger:#ff4d3d;
+    --sec:#b9b9c6; --dim:#5f6572;
+    --accent-light:#c7bdff; --accent-deep:#7a6dc7;
+    --surface:rgba(255,255,255,.03); --sborder:rgba(255,255,255,.07);
+    --down:#c7ccd6; --precision:var(--accent); --finisher:#f5a623; --assist:#37cabb;
+    --green:#5bd66b; --danger-br:#ff6a58;
+    --ground:radial-gradient(120% 90% at 78% -10%, #20203a 0%, #14141f 46%, #0e0e16 100%);
+    --ui:'Inter',system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
+    --mono:'JetBrains Mono',ui-monospace,"SF Mono",Menlo,Consolas,monospace;
+  }
   * { box-sizing:border-box; -webkit-tap-highlight-color:transparent; }
   html, body { min-height:100%; margin:0; }
   body { background:var(--bg); color:var(--text); user-select:none;
-    font-family:ui-monospace,"SF Mono",Menlo,Consolas,monospace;
-    -webkit-font-smoothing:antialiased; }
-  .app { display:flex; min-height:100vh; }
-  .rail { width:214px; flex:none; background:var(--void);
-    border-right:1px solid var(--line2); display:flex; flex-direction:column;
-    padding:calc(18px + env(safe-area-inset-top)) 0 18px; }
-  .brand { display:flex; align-items:center; gap:10px; padding:0 18px 16px; }
-  .brand img { height:30px; }
-  .brand .wm { color:var(--accent); font-weight:800; letter-spacing:.14em; font-size:15px; }
-  .nav { display:flex; flex-direction:column; gap:2px; padding:6px 12px; }
-  .nav a { display:flex; align-items:center; gap:11px; padding:11px 12px;
-    border-radius:7px; font-size:13px; color:#8a90a0; cursor:pointer; }
-  .nav a .i { width:6px; height:6px; border-radius:50%; background:#3a4453; }
-  .nav a.on { background:#17202b; color:var(--text); }
-  .nav a.on .i { background:var(--accent); }
-  .railfoot { margin-top:auto; padding:12px 16px 0; display:flex; flex-direction:column; gap:8px; }
-  .runbtn { background:var(--accent); color:#0b0f12; border:none; border-radius:10px;
-    padding:16px; font:inherit; font-size:.95rem; font-weight:800; letter-spacing:.08em;
-    text-transform:uppercase; cursor:pointer; transition:opacity .15s, transform .1s, background .15s; }
+    font-family:var(--ui); -webkit-font-smoothing:antialiased; }
+  .wrap { min-height:100vh; background:var(--ground);
+    padding:22px 30px calc(30px + env(safe-area-inset-bottom));
+    max-width:1120px; margin:0 auto; position:relative; overflow:hidden; }
+  .kick { font:600 11px var(--mono); letter-spacing:.2em; color:var(--muted);
+    text-transform:uppercase; margin-bottom:6px; }
+
+  /* top bar */
+  .bar { display:flex; align-items:center; gap:13px;
+    padding-top:env(safe-area-inset-top); margin-bottom:26px; }
+  .bar .logo { height:34px; }
+  .bar .wm { font-family:var(--ui); font-weight:800; letter-spacing:.16em; font-size:15px; }
+  .livepill { display:none; align-items:center; gap:8px; padding:6px 12px;
+    border:1px solid rgba(255,77,61,.5); border-radius:100px;
+    font:600 11px var(--mono); letter-spacing:.14em; color:var(--danger-br); }
+  .livepill.on { display:inline-flex; }
+  .livepill i { width:8px; height:8px; border-radius:50%; background:var(--danger);
+    box-shadow:0 0 10px var(--danger); }
+  .nav { margin-left:14px; display:flex; gap:4px; flex-wrap:wrap; }
+  .nav a { font:500 12.5px var(--ui); color:var(--muted); padding:6px 10px;
+    border-radius:7px; cursor:pointer; white-space:nowrap; }
+  .nav a:hover { color:var(--sec); }
+  .nav a.on { color:var(--text); background:var(--surface); }
+  .runbtn { margin-left:auto; background:transparent; border:1px solid rgba(255,75,66,.5);
+    color:var(--danger-br); border-radius:9px; padding:9px 20px;
+    font:700 11px var(--ui); letter-spacing:.08em; text-transform:uppercase;
+    cursor:pointer; transition:background .15s, transform .1s, color .15s; }
   .runbtn:active { transform:scale(.97); }
-  .runbtn.on { background:#ff4b42; color:#fff; }
-  .runbtn.busy { background:var(--panel2); color:var(--muted); cursor:default; }
-  .clipbtn { background:var(--accent); color:#0b0f12; border:none; border-radius:8px;
-    padding:13px; font:inherit; font-size:.82rem; font-weight:700; letter-spacing:.06em;
-    text-transform:uppercase; cursor:pointer; transition:opacity .15s, transform .1s; }
-  .clipbtn:active { transform:scale(.96); opacity:.85; }
-  .clipbtn.fired { background:var(--green); }
-  .minirow { display:flex; gap:8px; }
-  .fsbtn { flex:1; background:var(--panel); color:var(--muted); border:1px solid var(--line);
-    border-radius:7px; padding:9px 8px; font:inherit; font-size:.72rem; cursor:pointer; }
-  .main { flex:1; padding:26px 28px calc(28px + env(safe-area-inset-bottom));
-    max-width:900px; }
-  .top { display:flex; justify-content:space-between; align-items:flex-start; margin-bottom:22px; }
-  .status { font-size:1rem; }
-  .status .st { font-weight:700; font-size:1.05rem; letter-spacing:.02em; color:var(--muted); }
-  .status.live .st { color:var(--green); }
+  .runbtn.on { } /* stop look is the default outlined red */
+  .runbtn:not(.on):not(.busy) { border-color:var(--accent-deep);
+    color:var(--accent-light); background:linear-gradient(180deg,var(--accent),var(--accent-deep));
+    color:#12121a; border:none; }
+  .runbtn.busy { border-color:var(--line); color:var(--muted);
+    background:transparent; cursor:default; }
+
+  /* hero: count + sparkline | breakdown + actions */
+  .hero { display:grid; grid-template-columns:1.15fr .85fr; gap:26px; align-items:start; }
+  .killrow { display:flex; align-items:flex-end; gap:18px; }
+  .big { font-size:150px; line-height:.82; font-weight:900; letter-spacing:-.04em;
+    background:linear-gradient(180deg,var(--accent-light),var(--accent));
+    -webkit-background-clip:text; background-clip:text; color:transparent;
+    font-variant-numeric:tabular-nums; }
+  .killmeta { padding-bottom:16px; }
+  .status .st, #statustext { font:700 13px var(--ui); letter-spacing:.02em; color:var(--muted); }
+  .status { display:flex; align-items:center; }
+  .status.live #statustext { color:var(--green); }
   .dot { display:inline-block; width:9px; height:9px; border-radius:50%; margin-right:9px;
-    vertical-align:middle; background:var(--muted); }
+    background:var(--muted); }
   .status.live .dot { background:var(--green); box-shadow:0 0 10px var(--green); }
-  .sub { color:var(--dim); font-size:.78rem; margin-top:7px; letter-spacing:.04em; }
-  .cnt { text-align:right; }
-  .big { font-size:46px; line-height:1; font-weight:800; font-variant-numeric:tabular-nums; }
-  .accent { color:var(--accent); }
-  .lab { color:var(--muted); font-size:.6rem; letter-spacing:.16em; text-transform:uppercase; margin-top:5px; }
+  .sub { color:var(--dim); font:500 13px var(--ui); margin-top:5px; }
   @media (prefers-reduced-motion: no-preference){
     .big.pop { animation:pop .5s ease-out; }
-    @keyframes pop { 0%{ transform:scale(1); } 30%{ transform:scale(1.16);
-      text-shadow:0 0 34px rgba(156,88,218,.8); } 100%{ transform:scale(1); text-shadow:none; } }
+    @keyframes pop { 0%{ transform:scale(1);} 30%{ transform:scale(1.12);
+      filter:drop-shadow(0 0 34px rgba(145,132,217,.8)); } 100%{ transform:scale(1); filter:none; } }
   }
-  .tiles { display:grid; grid-template-columns:repeat(4,1fr); gap:10px; margin-bottom:8px; }
-  .tile { background:var(--panel); border:1px solid var(--line); border-radius:9px;
-    padding:14px 6px 12px; text-align:center; }
-  .tile .tn { font-size:1.5rem; font-weight:800; font-variant-numeric:tabular-nums; }
-  .tile .tl { font-size:.56rem; letter-spacing:.12em; text-transform:uppercase; color:var(--muted); margin-top:5px; }
-  .tile.down .tn { color:#c7ccd6; } .tile.precision .tn { color:var(--accent); }
-  .tile.finisher .tn { color:#f5a623; } .tile.assist .tn { color:#37cabb; }
-  .seclbl { color:var(--dim); font-size:.62rem; letter-spacing:.16em; text-transform:uppercase;
-    margin:24px 0 10px; }
-  .feed { display:flex; flex-direction:column; gap:5px; }
-  .row { background:var(--panel); border:1px solid var(--line2); border-radius:7px;
-    padding:11px 15px; display:flex; align-items:center; gap:12px; font-size:.9rem; }
-  .row.precision { border-color:var(--accent); }
-  .row .t { color:var(--dim); font-size:.72rem; font-variant-numeric:tabular-nums; }
-  .badge { font-size:.6rem; letter-spacing:.1em; text-transform:uppercase; padding:3px 8px;
-    border-radius:4px; background:#1c2630; color:var(--muted); white-space:nowrap; }
-  .precision .badge { background:var(--accent); color:#0b0f12; }
-  .finisher .badge { background:#f5a623; color:#0b0f12; }
-  .assist .badge { background:#37cabb; color:#0b0f12; }
-  .skull { height:16px; vertical-align:middle; }
-  .empty { color:var(--dim); padding:22px 4px; font-size:.85rem; }
-  .reels { margin-top:4px; }
-  .reelrow { background:var(--panel); border:1px solid var(--accent); border-radius:9px;
-    padding:12px 15px; display:flex; align-items:center; gap:12px; cursor:pointer; margin-bottom:7px; }
-  .reelrow .play { color:var(--accent); font-size:1.1rem; }
-  .reelrow .t { color:var(--muted); font-size:.72rem; margin-left:auto; }
-  .hint { color:var(--dim); font-size:.7rem; margin-top:26px; line-height:1.5; opacity:.85; }
-  .ver { position:fixed; bottom:9px; right:14px; font-size:.6rem; color:var(--dim);
-    letter-spacing:.08em; opacity:.6; z-index:5; }
+  .spark { width:100%; height:90px; margin-top:12px; display:block; }
+
+  .bars { display:flex; flex-direction:column; gap:11px; }
+  .brow { }
+  .barhd { display:flex; justify-content:space-between; font:600 12px var(--ui); margin-bottom:5px; }
+  .barhd .lb.down{color:var(--down);} .barhd .lb.precision{color:var(--accent);}
+  .barhd .lb.finisher{color:var(--finisher);} .barhd .lb.assist{color:var(--assist);}
+  .barhd .vn { color:var(--muted); font-variant-numeric:tabular-nums; }
+  .track { height:8px; border-radius:4px; background:#20232e; overflow:hidden; }
+  .fill { height:100%; border-radius:4px; width:0; transition:width .4s ease; }
+  .fill.down{background:var(--down);} .fill.precision{background:var(--accent);}
+  .fill.finisher{background:var(--finisher);} .fill.assist{background:var(--assist);}
+  .cta { display:flex; gap:9px; margin-top:8px; }
+  .btn { flex:1; border-radius:9px; padding:13px; font:700 12px var(--ui);
+    letter-spacing:.06em; text-transform:uppercase; cursor:pointer;
+    transition:transform .1s, filter .15s, background .15s; }
+  .btn:active { transform:scale(.97); }
+  .btn.primary { background:var(--accent); color:#12121a; border:none; }
+  .btn.primary:hover { filter:brightness(1.08); }
+  .btn.ghost { background:transparent; color:var(--accent-light);
+    border:1px solid var(--accent-deep); }
+  .btn.fired { background:var(--green); color:#0b0f12; border-color:var(--green); }
+
+  /* match timeline */
+  .tl { margin-top:26px; }
+  .tlhd { display:flex; align-items:baseline; justify-content:space-between; margin-bottom:11px; }
+  .tlmeta { font:500 11px var(--ui); color:var(--dim); }
+  .rail2 { position:relative; height:56px; border-radius:10px;
+    background:linear-gradient(90deg,#16161f,#191922);
+    border:1px solid var(--sborder); overflow:hidden; }
+  .rail2 .baseline { position:absolute; inset:0; display:flex; align-items:center; padding:0 16px; }
+  .rail2 .baseline:before { content:''; height:2px; flex:1;
+    background:repeating-linear-gradient(90deg,#2a2a38 0 6px,transparent 6px 12px); }
+  .mk { position:absolute; top:11px; width:34px; height:34px; border-radius:8px;
+    transform:translateX(-50%); display:flex; align-items:center; justify-content:center;
+    font:700 11px var(--ui); background:#22262f; border:1px solid #333a46; color:var(--down); }
+  .mk.precision{ background:rgba(145,132,217,.16); border-color:var(--accent); color:var(--accent-light); }
+  .mk.finisher{ background:rgba(245,166,35,.16); border-color:var(--finisher); color:var(--finisher); }
+  .mk.assist{ background:rgba(55,202,187,.16); border-color:var(--assist); color:var(--assist); }
+  .tlempty { position:absolute; inset:0; display:flex; align-items:center;
+    justify-content:center; color:var(--dim); font:500 12px var(--ui); }
+
+  /* reels + replays */
+  .reels { margin-top:20px; }
+  .reelrow { display:flex; align-items:center; gap:13px; background:var(--surface);
+    border:1px solid var(--sborder); border-radius:11px; padding:12px 16px;
+    cursor:pointer; margin-bottom:8px; }
+  .reels#reels .reelrow:first-child { background:linear-gradient(90deg,rgba(145,132,217,.12),transparent);
+    border-color:rgba(145,132,217,.35); }
+  .reelrow .play { width:44px; height:30px; border-radius:6px; background:#0c0c14;
+    flex:none; display:flex; align-items:center; justify-content:center;
+    color:var(--accent); font-size:14px; }
+  .reelrow span:not(.play):not(.t) { font:600 13px var(--ui); color:var(--text); }
+  .reelrow .t { margin-left:auto; font:500 11px var(--mono); color:var(--dim); }
+
+  /* recent feed */
+  .recent { margin-top:24px; }
+  .feed { display:flex; flex-direction:column; gap:6px; }
+  .row { background:var(--surface); border:1px solid var(--sborder); border-radius:9px;
+    padding:11px 15px; display:flex; align-items:center; gap:12px; font:500 13.5px var(--ui); }
+  .row.precision { border-color:rgba(145,132,217,.4); }
+  .row .t { margin-left:auto; color:var(--dim); font:500 11px var(--mono); }
+  .badge { font:600 10px var(--mono); letter-spacing:.1em; text-transform:uppercase;
+    padding:3px 8px; border-radius:5px; background:#1c2630; color:var(--muted); white-space:nowrap; }
+  .precision .badge { background:var(--accent); color:#12121a; }
+  .finisher .badge { background:var(--finisher); color:#12121a; }
+  .assist .badge { background:var(--assist); color:#12121a; }
+  .skull { height:15px; vertical-align:middle; }
+  .empty { color:var(--dim); padding:20px 4px; font:500 13px var(--ui); }
+
+  .ctrls { display:flex; gap:8px; margin-top:22px; max-width:260px; }
+  .mini { flex:1; background:var(--surface); color:var(--muted); border:1px solid var(--sborder);
+    border-radius:8px; padding:9px 8px; font:500 11px var(--mono); letter-spacing:.06em; cursor:pointer; }
+  .hint { color:var(--dim); font:500 11px var(--ui); margin-top:16px; line-height:1.5; opacity:.85; }
+  .ver { position:fixed; bottom:9px; right:14px; font:500 10px var(--mono);
+    color:var(--dim); letter-spacing:.08em; opacity:.6; z-index:5; }
+
+  /* modals / settings / help (ported, theme-var based) */
   .modal { display:none; position:fixed; inset:0; background:rgba(0,0,0,.93);
     z-index:50; align-items:center; justify-content:center; flex-direction:column; padding:16px; }
   .modal.open { display:flex; }
   .modal video { width:100%; max-width:900px; max-height:75vh; border-radius:12px; background:#000; }
   .modal .mlabel { color:var(--text); font-size:.85rem; margin:14px 0 10px; }
-  .modal .close { background:var(--panel); color:var(--text); border:1px solid var(--line);
-    border-radius:8px; padding:10px 26px; font:inherit; font-size:.8rem; cursor:pointer; }
-  .settings { background:var(--panel); border:1px solid var(--line); border-radius:14px;
-    padding:18px; max-width:480px; width:100%; max-height:80vh; overflow-y:auto; text-align:left; }
-  .settings h2 { margin:0 0 14px; font-size:.85rem; letter-spacing:.14em; text-transform:uppercase; color:var(--accent); }
-  .modehead { color:var(--muted); font-size:.62rem; letter-spacing:.14em; text-transform:uppercase; margin:2px 0 8px; }
+  .modal .close { background:var(--surface); color:var(--text); border:1px solid var(--sborder);
+    border-radius:8px; padding:10px 26px; font:600 13px var(--ui); cursor:pointer; }
+  .settings { background:#12121c; border:1px solid var(--sborder); border-radius:14px;
+    padding:18px; max-width:480px; width:100%; max-height:80vh; overflow-y:auto; text-align:left;
+    box-shadow:0 24px 60px -18px rgba(0,0,0,.7); }
+  .settings h2 { margin:0 0 14px; font:700 12px var(--ui); letter-spacing:.14em;
+    text-transform:uppercase; color:var(--accent-light); }
+  .modehead { color:var(--muted); font:600 10px var(--mono); letter-spacing:.14em;
+    text-transform:uppercase; margin:2px 0 8px; }
   .moderow { display:flex; align-items:center; gap:12px; padding:6px 0; }
-  .modebtn { flex:0 0 92px; background:var(--bg); color:var(--text); border:1px solid var(--line);
-    border-radius:8px; padding:9px 0; font:inherit; font-size:.7rem; font-weight:700; letter-spacing:.1em; cursor:pointer; }
-  .modebtn.active { background:var(--accent); color:var(--bg); border-color:var(--accent); }
-  .modedesc { color:var(--muted); font-size:.68rem; line-height:1.35; }
+  .modebtn { flex:0 0 92px; background:var(--bg); color:var(--text); border:1px solid var(--sborder);
+    border-radius:8px; padding:9px 0; font:700 11px var(--ui); letter-spacing:.1em; cursor:pointer; }
+  .modebtn.active { background:var(--accent); color:#12121a; border-color:var(--accent); }
+  .modedesc { color:var(--muted); font:500 11px var(--ui); line-height:1.35; }
   .setrow { display:flex; align-items:center; justify-content:space-between; gap:12px;
-    padding:11px 2px; border-bottom:1px solid var(--line); font-size:.85rem; }
+    padding:11px 2px; border-bottom:1px solid var(--sborder); font:500 13.5px var(--ui); }
   .setrow:last-of-type { border-bottom:none; }
   .setrow input[type=number] { width:76px; background:var(--bg); color:var(--text);
-    border:1px solid var(--line); border-radius:6px; padding:7px 9px; font:inherit; font-size:.85rem; text-align:center; }
+    border:1px solid var(--sborder); border-radius:6px; padding:7px 9px; font:inherit; text-align:center; }
   .switch { position:relative; width:52px; height:30px; flex:none; }
   .switch input { opacity:0; width:0; height:0; }
   .slider { position:absolute; inset:0; background:var(--line); border-radius:15px; cursor:pointer; transition:background .15s; }
   .slider:before { content:''; position:absolute; width:24px; height:24px; left:3px; top:3px;
     background:var(--muted); border-radius:50%; transition:transform .15s, background .15s; }
   .switch input:checked + .slider { background:var(--accent); }
-  .switch input:checked + .slider:before { transform:translateX(22px); background:#0b0f12; }
-  .savedmsg { color:var(--accent); font-size:.75rem; text-align:center; margin-top:10px; opacity:0; transition:opacity .3s; }
+  .switch input:checked + .slider:before { transform:translateX(22px); background:#12121a; }
+  .savedmsg { color:var(--accent-light); font:500 12px var(--ui); text-align:center; margin-top:10px; opacity:0; transition:opacity .3s; }
   .savedmsg.show { opacity:1; }
-  .help h3 { color:var(--accent); font-size:.72rem; letter-spacing:.14em; text-transform:uppercase; margin:16px 0 6px; }
+  .help h3 { color:var(--accent-light); font:700 11px var(--ui); letter-spacing:.14em; text-transform:uppercase; margin:16px 0 6px; }
   .help h3:first-of-type { margin-top:0; }
-  .help p { color:var(--text); font-size:.82rem; line-height:1.5; margin:0 0 4px; }
-  .help .m { color:var(--muted); } .help code { color:var(--accent); font-size:.78rem; }
-  @media(max-width:760px){
-    .app { flex-direction:column; }
-    .rail { width:auto; border-right:none; border-bottom:1px solid var(--line2); padding-bottom:12px; }
-    .nav { flex-direction:row; overflow-x:auto; gap:6px; }
-    .nav a { white-space:nowrap; padding:9px 12px; }
-    .nav a .i { display:none; }
-    .railfoot { flex-direction:row; margin-top:12px; }
-    .railfoot .clipbtn { flex:1; }
-    .minirow { flex:1; }
-    .main { max-width:none; padding:20px 18px; }
-    .big { font-size:38px; }
+  .help p { color:var(--text); font:500 13px var(--ui); line-height:1.5; margin:0 0 4px; }
+  .help .m { color:var(--muted); } .help code { color:var(--accent-light); font:500 12px var(--mono); }
+
+  @media(max-width:820px){
+    .wrap { padding:16px 16px calc(24px + env(safe-area-inset-bottom)); }
+    .bar { flex-wrap:wrap; }
+    .nav { margin-left:0; order:3; width:100%; overflow-x:auto; }
+    .runbtn { margin-left:auto; }
+    .hero { grid-template-columns:1fr; gap:18px; }
+    .big { font-size:96px; }
+    .killmeta { padding-bottom:8px; }
   }
 </style></head><body>
-<div class="app">
-  <aside class="rail">
-    <div class="brand"><img src="/skull.png" alt=""><span class="wm">WITNESS</span></div>
+<div class="wrap">
+  <header class="bar">
+    <img class="logo" src="/skull.png" alt="">
+    <span class="wm">WITNESS</span>
+    <span class="livepill" id="livepill"><i></i>LIVE</span>
     <nav class="nav">
-      <a class="on"><span class="i"></span>Live</a>
-      <a onclick="location.href='/archive'"><span class="i"></span>Reels</a>
-      <a onclick="location.href='/stats'"><span class="i"></span>Stats</a>
-      <a onclick="location.href='/archive'"><span class="i"></span>Archive</a>
-      <a onclick="openSettings()"><span class="i"></span>Settings</a>
-      <a onclick="openHelp()"><span class="i"></span>How to use</a>
+      <a class="on">Live</a>
+      <a onclick="location.href='/archive'">Reels</a>
+      <a onclick="location.href='/stats'">Stats</a>
+      <a onclick="location.href='/archive'">Archive</a>
+      <a onclick="openSettings()">Settings</a>
+      <a onclick="openHelp()">How to use</a>
     </nav>
-    <div class="railfoot">
-      <button class="runbtn" id="runbtn" onclick="toggleRun()">START</button>
-      <button class="clipbtn" id="clip" onclick="saveClip()">SAVE CLIP</button>
-      <button class="clipbtn" id="addk" onclick="addKill()">+1 KILL</button>
-      <div class="minirow">
-        <button class="fsbtn" id="snd" onclick="toggleSound()">SOUND: ON</button>
-        <button class="fsbtn" id="fs" onclick="goFull()">Full</button>
+    <button class="runbtn" id="runbtn" onclick="toggleRun()">START</button>
+  </header>
+
+  <section class="hero">
+    <div class="heroL">
+      <div class="kick">Session kills</div>
+      <div class="killrow">
+        <div class="big" id="count">0</div>
+        <div class="killmeta">
+          <div class="status" id="status"><span class="dot"></span><span id="statustext">CONNECTING</span></div>
+          <div class="sub" id="sub">&nbsp;</div>
+        </div>
+      </div>
+      <svg class="spark" id="spark" viewBox="0 0 460 90" preserveAspectRatio="none" aria-hidden="true">
+        <defs><linearGradient id="rg" x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0" stop-color="#9184d9" stop-opacity=".38"/>
+          <stop offset="1" stop-color="#9184d9" stop-opacity="0"/></linearGradient></defs>
+        <path id="sparkArea" d="" fill="url(#rg)"/>
+        <path id="sparkLine" d="" fill="none" stroke="#9184d9" stroke-width="2.5"/>
+        <circle id="sparkDot" cx="0" cy="86" r="4" fill="#c7bdff" style="display:none"/>
+      </svg>
+    </div>
+    <div class="heroR">
+      <div class="kick">Breakdown</div>
+      <div class="bars">
+        <div class="brow"><div class="barhd"><span class="lb down">Downs</span><span class="vn" id="t_down">0</span></div><div class="track"><div class="fill down" id="b_down"></div></div></div>
+        <div class="brow"><div class="barhd"><span class="lb precision">Precision</span><span class="vn" id="t_precision">0</span></div><div class="track"><div class="fill precision" id="b_precision"></div></div></div>
+        <div class="brow"><div class="barhd"><span class="lb finisher">Finishers</span><span class="vn" id="t_finisher">0</span></div><div class="track"><div class="fill finisher" id="b_finisher"></div></div></div>
+        <div class="brow"><div class="barhd"><span class="lb assist">Assists</span><span class="vn" id="t_assist">0</span></div><div class="track"><div class="fill assist" id="b_assist"></div></div></div>
+      </div>
+      <div class="cta">
+        <button class="btn primary" id="clip" onclick="saveClip()">Save clip</button>
+        <button class="btn ghost" id="addk" onclick="addKill()">+1 Kill</button>
       </div>
     </div>
-  </aside>
-  <main class="main">
-    <div class="top">
-      <div class="status" id="status">
-        <div class="st"><span class="dot"></span><span id="statustext">CONNECTING</span></div>
-        <div class="sub" id="sub">&nbsp;</div>
-      </div>
-      <div class="cnt"><div class="big accent" id="count">0</div><div class="lab">Kills</div></div>
-    </div>
-    <div class="tiles">
-      <div class="tile down"><div class="tn" id="t_down">0</div><div class="tl">Downs</div></div>
-      <div class="tile precision"><div class="tn" id="t_precision">0</div><div class="tl">Precision</div></div>
-      <div class="tile finisher"><div class="tn" id="t_finisher">0</div><div class="tl">Finishers</div></div>
-      <div class="tile assist"><div class="tn" id="t_assist">0</div><div class="tl">Assists</div></div>
-    </div>
-    <div class="reels" id="reels" style="display:none"><p class="seclbl">Match Highlights</p><div id="reellist"></div></div>
-    <div class="reels" id="replays" style="display:none"><p class="seclbl">Instant Replays</p><div id="replaylist"></div></div>
-    <p class="seclbl">Recent</p>
-    <div class="feed" id="feed"><div class="empty">Waiting for kills…</div></div>
-    <div class="ver" id="ver"></div>
-    <div class="hint" id="updmsg" style="color:var(--dim)"></div>
-    <div class="hint" id="hint">iPad: tap Share &rarr; Add to Home Screen for full screen.
-      Screen still dimming? Settings &rarr; Display &amp; Brightness &rarr; Auto-Lock &rarr; Never.</div>
-  </main>
+  </section>
+
+  <section class="tl">
+    <div class="tlhd"><div class="kick" style="margin-bottom:0">Match timeline</div><div class="tlmeta" id="tlmeta"></div></div>
+    <div class="rail2" id="timeline"><div class="baseline"></div><div class="tlempty" id="tlempty">No kills yet this session</div></div>
+  </section>
+
+  <section class="reels" id="reels" style="display:none">
+    <div class="kick">Match highlights</div><div id="reellist"></div>
+  </section>
+  <section class="reels" id="replays" style="display:none">
+    <div class="kick">Instant replays</div><div id="replaylist"></div>
+  </section>
+
+  <section class="recent">
+    <div class="kick">Recent</div>
+    <div class="feed" id="feed"><div class="empty">Waiting for kills&hellip;</div></div>
+  </section>
+
+  <div class="ctrls">
+    <button class="mini" id="snd" onclick="toggleSound()">SOUND: OFF</button>
+    <button class="mini" id="fs" onclick="goFull()">Full screen</button>
+  </div>
+  <div class="hint" id="updmsg" style="color:var(--dim)"></div>
+  <div class="hint" id="hint">iPad: tap Share &rarr; Add to Home Screen for full screen.
+    Screen still dimming? Settings &rarr; Display &amp; Brightness &rarr; Auto-Lock &rarr; Never.</div>
+  <div class="ver" id="ver"></div>
 </div>
 <div class="modal" id="modal">
   <video id="reelvid" controls playsinline></video>
@@ -1005,14 +1104,14 @@ PAGE = """<!doctype html><html lang="en"><head><meta charset="utf-8">
     <h3>Kill counter + feed</h3>
     <p>Kills are detected automatically from the game screen. The big number and the feed update within a second or two of each kill.</p>
     <h3>Save clip</h3>
-    <p>Saves the last ~30 seconds manually — for a moment the detector missed or anything else worth keeping.</p>
+    <p>Saves the last ~30 seconds manually &mdash; for a moment the detector missed or anything else worth keeping.</p>
     <h3>Sound</h3>
     <p>This device dings on every kill. Tap the page once after opening it (browser rule), then use SOUND to toggle.</p>
     <h3>Screen staying awake</h3>
     <p>The same first tap starts a keep-awake trick so the screen doesn't auto-lock. If it still sleeps, set iPad Settings &rarr; Display &amp; Brightness &rarr; Auto-Lock to Never while playing.</p>
     <h3>Match highlights</h3>
     <p>About 30 seconds after you exfil, a highlight reel of that match pops up here: stat card, Play of the Game, then every clip.</p>
-    <p class="m">Two versions per match — clean, and one with an announcer voiceover. Both are tappable in the list.</p>
+    <p class="m">Two versions per match &mdash; clean, and one with an announcer voiceover. Both are tappable in the list.</p>
     <h3>Instant replays</h3>
     <p>Every kill clip appears here seconds after it saves. Tap to rewatch. Keeps the last 20.</p>
     <h3>Archive</h3>
@@ -1020,9 +1119,9 @@ PAGE = """<!doctype html><html lang="en"><head><meta charset="utf-8">
     <h3>Music on reels</h3>
     <p>Drop an mp3 into the <code>music</code> folder next to the app and reels get a soundtrack automatically.</p>
     <h3>Settings</h3>
-    <p>Every toggle applies to the running session immediately — no restart, no config file editing.</p>
+    <p>Every toggle applies to the running session immediately &mdash; no restart, no config file editing.</p>
     <h3>Where files go</h3>
-    <p class="m">Clips land in your OBS output folder under <code>Marathon Sessions/&lt;date&gt;/</code> — reels in <code>reels/</code>, vertical Shorts in <code>shorts/</code>, plus a screenshot of each exfil screen. A session recap, match card, and montage are built when you stop.</p>
+    <p class="m">Clips land in your OBS output folder under <code>Marathon Sessions/&lt;date&gt;/</code> &mdash; reels in <code>reels/</code>, vertical Shorts in <code>shorts/</code>, plus a screenshot of each exfil screen. A session recap, match card, and montage are built when you stop.</p>
   </div>
   <div style="height:14px"></div>
   <button class="close" onclick="closeHelp()">CLOSE</button>
@@ -1031,7 +1130,7 @@ PAGE = """<!doctype html><html lang="en"><head><meta charset="utf-8">
   <div class="settings">
     <h2>Settings</h2>
     <div id="setlist"></div>
-    <div class="savedmsg" id="savedmsg">Saved — applies immediately</div>
+    <div class="savedmsg" id="savedmsg">Saved &mdash; applies immediately</div>
   </div>
   <div style="height:14px"></div>
   <button class="close" onclick="closeSettings()">CLOSE</button>
@@ -1045,11 +1144,17 @@ PAGE = """<!doctype html><html lang="en"><head><meta charset="utf-8">
       lastCount = d.count;
       document.getElementById('count').textContent = d.count;
       var tags = d.tags || {};
+      var maxTag = Math.max(1, tags.down||0, tags.precision||0, tags.finisher||0, tags.assist||0);
       ['down','precision','finisher','assist'].forEach(function(t){
-        document.getElementById('t_'+t).textContent = tags[t] || 0;
+        var v = tags[t] || 0;
+        document.getElementById('t_'+t).textContent = v;
+        document.getElementById('b_'+t).style.width = Math.round(v/maxTag*100) + '%';
       });
+      renderSpark(d.events || []);
+      renderTimeline(d.events || []);
       var st = document.querySelector('.status');
       st.className = 'status' + (d.running ? ' live' : '');
+      document.getElementById('livepill').className = 'livepill' + (d.running ? ' on' : '');
       document.getElementById('statustext').textContent = d.running ? 'WATCHING' : 'READY';
       document.getElementById('sub').textContent =
         d.running && d.elapsed ? 'SESSION  ' + fmtElapsed(d.elapsed)
@@ -1270,6 +1375,55 @@ PAGE = """<!doctype html><html lang="en"><head><meta charset="utf-8">
     var el = document.getElementById('count');
     el.classList.remove('pop'); void el.offsetWidth;  // restart the animation
     el.classList.add('pop');
+  }
+
+  // Kill tags (down/precision/finisher/assist) only — alerts/notices don't
+  // belong on the rate graph or the timeline.
+  var KILL_TAGS = {down:1, precision:1, finisher:1, assist:1};
+  function killEvents(events){
+    // events arrive newest-first; return oldest-first for left-to-right plots.
+    return events.filter(function(e){ return KILL_TAGS[e.tag]; }).reverse();
+  }
+
+  function renderSpark(events){
+    var kills = killEvents(events);
+    var line = document.getElementById('sparkLine');
+    var area = document.getElementById('sparkArea');
+    var dot = document.getElementById('sparkDot');
+    var n = kills.length, W = 460, top = 14, bot = 84;
+    if (!n){ line.setAttribute('d',''); area.setAttribute('d',''); dot.style.display='none'; return; }
+    var pts = [];
+    for (var i=0;i<n;i++){
+      var x = n>1 ? i/(n-1)*W : 0;
+      var y = bot - ((i+1)/n)*(bot-top);   // cumulative kills, last point highest
+      pts.push([Math.round(x), Math.round(y)]);
+    }
+    var d = 'M' + pts.map(function(p){ return p[0]+','+p[1]; }).join(' L');
+    line.setAttribute('d', d);
+    var last = pts[n-1], first = pts[0];
+    area.setAttribute('d', d + ' L'+last[0]+',90 L'+first[0]+',90 Z');
+    dot.setAttribute('cx', last[0]); dot.setAttribute('cy', last[1]); dot.style.display='';
+  }
+
+  var TL_LETTER = {down:'D', precision:'P', finisher:'F', assist:'A'};
+  function renderTimeline(events){
+    var kills = killEvents(events);
+    var rail = document.getElementById('timeline');
+    var empty = document.getElementById('tlempty');
+    var meta = document.getElementById('tlmeta');
+    Array.prototype.slice.call(rail.querySelectorAll('.mk')).forEach(function(m){ m.remove(); });
+    var shown = kills.slice(-12);
+    if (!shown.length){ empty.style.display=''; meta.textContent=''; return; }
+    empty.style.display='none';
+    meta.textContent = kills.length + ' kill' + (kills.length===1?'':'s');
+    shown.forEach(function(e, i){
+      var mk = document.createElement('div');
+      mk.className = 'mk ' + e.tag;
+      mk.style.left = ((i+0.5)/shown.length*100) + '%';
+      mk.textContent = TL_LETTER[e.tag] || '';
+      mk.title = (e.text||'') + '  ' + (e.time||'');
+      rail.appendChild(mk);
+    });
   }
 
   function fmtElapsed(s){

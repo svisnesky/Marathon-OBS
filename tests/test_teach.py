@@ -66,8 +66,9 @@ def test_profile_yaml_is_valid_and_gated():
 
 def test_apply_theme_reskins_pages():
     import webserver
-    html = ('<title>Marathon Kill Feed</title><style>:root { --bg:#0b0f12; '
-            '--accent:#9c58da; } .nem { background:#ff4d3d; }</style>'
+    d = webserver.THEME_DEFAULTS   # sample page must carry the CURRENT defaults
+    html = (f'<title>Marathon Kill Feed</title><style>:root {{ --bg:{d["bg"]}; '
+            f'--accent:{d["accent"]}; }} .nem {{ background:{d["danger"]}; }}</style>'
             '<header><img src="/wordmark.png" alt="MARATHON"></header>')
     themed = webserver.apply_theme(html, {"theme": {
         "display_name": "Arc Raiders", "accent": "#ff9d2b",
