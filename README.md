@@ -53,6 +53,12 @@ set `gamertag` in config.yaml to your exact in-game name:
 
 <img src="docs/screenshots/reel_end_card.png" width="440" alt="GG end card">
 
+**Every session, kept.** The Archive lists every past session with per-match
+recaps and one-tap access to all its reels and clips — "save" downloads any of
+them to share:
+
+<img src="docs/screenshots/archive.png" width="440" alt="Session archive">
+
 Marathon has no public kill API, so this tool *watches your screen*: it OCRs
 the center-screen reward popup that appears only on your downs
 (**"RUNNER DOWN +15 XP"**, **"FINISHER +50"**, **"PRECISION DOWN +25"**). On
