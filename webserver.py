@@ -479,11 +479,12 @@ def _stats_page(base_dir: str) -> str:
     board = sorted(((n, totals(rs)) for n, rs in by_player.items()),
                    key=lambda kv: -kv[1]["loot"])
 
+    # The three economy tiles (damage/loot/best haul) get the accent gradient.
     cards = "".join(
-        f'<div class="tile"><div class="tn">{v:,}</div><div class="tl">{l}</div></div>'
-        for l, v in [("Matches", me["matches"]), ("Runner elims", me["elims"]),
-                     ("Downs", me["downs"]), ("Runner damage", me["damage"]),
-                     ("Loot extracted", me["loot"]), ("Best haul", me["best_haul"])])
+        f'<div class="tile{eco}"><div class="tn">{v:,}</div><div class="tl">{l}</div></div>'
+        for l, v, eco in [("Matches", me["matches"], ""), ("Runner elims", me["elims"], ""),
+                          ("Downs", me["downs"], ""), ("Runner damage", me["damage"], " eco"),
+                          ("Loot extracted", me["loot"], " eco"), ("Best haul", me["best_haul"], " eco")])
 
     if board:
         head = "<tr><th></th><th>Player</th><th>Matches</th><th>Elims</th><th>Downs</th><th>Damage</th><th>Loot</th><th>Best haul</th></tr>"
@@ -709,48 +710,55 @@ ARCHIVE_PAGE = """<!doctype html><html lang="en"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>WITNESS &mdash; Archive</title>
 <style>
-  :root { --bg:#0b0f12; --panel:#12181d; --line:#232d34; --text:#e8edf0;
-          --muted:#7d8a94; --dim:#5f6572; --accent:#9c58da; }
+  :root { --bg:#0e0e16; --panel:#12181d; --line:#232d34; --text:#e9e9ed;
+    --muted:#8a90a0; --accent:#9184d9; --danger:#ff4d3d;
+    --sec:#b9b9c6; --dim:#5f6572; --accent-light:#c7bdff; --accent-deep:#7a6dc7;
+    --surface:rgba(255,255,255,.03); --sborder:rgba(255,255,255,.07);
+    --ground:radial-gradient(120% 80% at 82% -10%,#20203a 0%,#14141f 46%,#0e0e16 100%);
+    --ui:'Inter',system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
+    --mono:'JetBrains Mono',ui-monospace,"SF Mono",Menlo,Consolas,monospace; }
   * { box-sizing:border-box; }
-  body { margin:0; background:var(--bg); color:var(--text);
-    font-family:ui-monospace,"SF Mono",Menlo,Consolas,monospace;
-    padding:calc(22px + env(safe-area-inset-top)) 18px calc(44px + env(safe-area-inset-bottom)); }
-  .wrap { max-width:760px; margin:0 auto; }
-  .top { display:flex; align-items:center; gap:12px; margin-bottom:6px; }
-  .top img { height:30px; }
-  .top .wm { color:var(--accent); font-weight:800; letter-spacing:.14em; font-size:15px;
-    font-family:"Helvetica Neue",Arial,sans-serif; }
-  .top .back { margin-left:auto; color:var(--muted); font-size:.72rem; text-decoration:none;
-    border:1px solid var(--line); border-radius:10px; padding:9px 16px; }
-  .top .back:hover { border-color:var(--accent); color:var(--accent); }
-  h2 { font-family:"Helvetica Neue",Arial,sans-serif; font-weight:800; font-size:1.5rem;
-    letter-spacing:-.01em; margin:18px 0 4px; }
-  .sub { color:var(--muted); font-size:.82rem; margin:0 0 22px; }
-  details { background:var(--panel); border:1px solid var(--line); border-radius:14px;
-    padding:2px 18px; margin-bottom:10px; }
-  summary { padding:16px 0; cursor:pointer; font-size:.92rem; list-style:none; }
+  body { margin:0; background:var(--bg); color:var(--text); font-family:var(--ui);
+    -webkit-font-smoothing:antialiased; }
+  .wrap { min-height:100vh; background:var(--ground); max-width:820px; margin:0 auto;
+    padding:calc(24px + env(safe-area-inset-top)) 30px calc(40px + env(safe-area-inset-bottom)); }
+  .top { display:flex; align-items:center; gap:13px; margin-bottom:22px; }
+  .top img { height:32px; }
+  .top .wm { font-weight:800; letter-spacing:.16em; font-size:15px; }
+  .nav { margin-left:auto; display:flex; gap:14px; }
+  .nav a { font:500 12px var(--ui); color:var(--dim); text-decoration:none; }
+  .nav a.on { font-weight:600; color:var(--accent-light);
+    border-bottom:2px solid var(--accent); padding-bottom:3px; }
+  .kick { font:600 11px var(--mono); letter-spacing:.22em; color:var(--muted); text-transform:uppercase; }
+  h2 { font-weight:900; font-size:34px; letter-spacing:-.02em; margin:4px 0 3px; }
+  .sub { color:var(--muted); font:400 13px var(--ui); margin:0 0 22px; max-width:60ch; line-height:1.5; }
+  details { background:var(--surface); border:1px solid var(--sborder); border-radius:12px;
+    padding:2px 20px; margin-bottom:10px; }
+  summary { padding:16px 0; cursor:pointer; font:500 14px var(--ui); list-style:none; }
   summary::-webkit-details-marker { display:none; }
-  summary b { color:var(--text); }
-  .meta { color:var(--muted); font-size:.72rem; float:right; }
-  h4 { color:var(--dim); font-size:.6rem; letter-spacing:.16em; text-transform:uppercase;
+  summary b { color:var(--text); font-weight:600; }
+  .meta { color:var(--muted); font:500 11px var(--mono); float:right; }
+  h4 { color:var(--dim); font:600 10px var(--mono); letter-spacing:.16em; text-transform:uppercase;
     margin:10px 0 8px; }
-  .rc { font-size:.8rem; color:var(--text); padding:8px 0; border-bottom:1px solid var(--line); }
-  .rc.none { color:var(--muted); border:none; background:var(--panel);
-    border:1px solid var(--line); border-radius:14px; padding:20px; }
-  .mrow { display:flex; align-items:center; gap:10px; padding:11px 0;
-    border-bottom:1px solid var(--line); font-size:.82rem; }
+  .rc { font:500 13px var(--ui); color:var(--sec); padding:9px 0; border-bottom:1px solid rgba(255,255,255,.05); }
+  .rc.none { color:var(--muted); background:var(--surface);
+    border:1px solid var(--sborder); border-radius:12px; padding:20px; }
+  .mrow { display:flex; align-items:center; gap:12px; padding:12px 0;
+    border-bottom:1px solid rgba(255,255,255,.05); font:500 13px var(--ui); }
   .mrow:last-child, details .rc:last-of-type { border-bottom:none; }
-  .play { color:var(--accent); font-size:.8rem; }
+  .play { color:var(--accent); font-size:.85rem; }
   .ml { color:var(--text); text-decoration:none; flex:1; }
-  .dl { color:var(--accent); text-decoration:none; font-size:.7rem; letter-spacing:.08em;
-    text-transform:uppercase; border:1px solid var(--line); border-radius:8px; padding:5px 12px; }
-  .dl:hover { border-color:var(--accent); }
+  .dl { color:var(--accent-light); text-decoration:none; font:600 10px var(--mono); letter-spacing:.08em;
+    text-transform:uppercase; border:1px solid var(--accent-deep); border-radius:8px; padding:6px 13px; }
+  .dl:hover { background:rgba(145,132,217,.12); }
   details > *:last-child { margin-bottom:14px; }
 </style></head><body><div class="wrap">
   <div class="top"><img src="/skull.png" alt=""><span class="wm">WITNESS</span>
-    <a class="back" href="/">&larr; Live</a></div>
-  <h2>Archive</h2>
-  <p class="sub">Every session, kept. Tap a reel to watch; "save" downloads it for sharing (Files &rarr; share sheet &rarr; group chat).</p>
+    <nav class="nav"><a href="/">Live</a><a href="/archive">Reels</a>
+      <a href="/stats">Stats</a><a class="on">Archive</a></nav></div>
+  <div class="kick">Archive</div>
+  <h2>Every session, kept</h2>
+  <p class="sub">Tap a reel to watch; "save" downloads it for sharing (Files &rarr; share sheet &rarr; group chat).</p>
   %%BODY%%
 </div></body></html>"""
 
@@ -758,50 +766,64 @@ STATS_PAGE = """<!doctype html><html lang="en"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>WITNESS &mdash; Stats</title>
 <style>
-  :root { --bg:#0b0f12; --panel:#12181d; --panel2:#161d26; --line:#232d34;
-          --text:#e8edf0; --muted:#7d8a94; --dim:#5f6572; --accent:#9c58da; }
+  :root { --bg:#0e0e16; --panel:#12181d; --line:#232d34; --text:#e9e9ed;
+    --muted:#8a90a0; --accent:#9184d9; --danger:#ff4d3d;
+    --sec:#b9b9c6; --dim:#5f6572; --accent-light:#c7bdff; --accent-deep:#7a6dc7;
+    --surface:rgba(255,255,255,.03); --sborder:rgba(255,255,255,.07);
+    --ground:radial-gradient(120% 80% at 82% -10%,#20203a 0%,#14141f 46%,#0e0e16 100%);
+    --ui:'Inter',system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
+    --mono:'JetBrains Mono',ui-monospace,"SF Mono",Menlo,Consolas,monospace; }
   * { box-sizing:border-box; }
-  body { margin:0; background:var(--bg); color:var(--text);
-    font-family:ui-monospace,"SF Mono",Menlo,Consolas,monospace;
-    padding:calc(22px + env(safe-area-inset-top)) 18px calc(44px + env(safe-area-inset-bottom)); }
-  .wrap { max-width:760px; margin:0 auto; }
-  .top { display:flex; align-items:center; gap:12px; margin-bottom:6px; }
-  .top img { height:30px; }
-  .top .wm { color:var(--accent); font-weight:800; letter-spacing:.14em; font-size:15px;
-    font-family:"Helvetica Neue",Arial,sans-serif; }
-  .top .back { margin-left:auto; color:var(--muted); font-size:.72rem; text-decoration:none;
-    border:1px solid var(--line); border-radius:10px; padding:9px 16px; }
-  .top .back:hover { border-color:var(--accent); color:var(--accent); }
-  h2 { font-family:"Helvetica Neue",Arial,sans-serif; font-weight:800; font-size:1.5rem;
-    letter-spacing:-.01em; margin:18px 0 4px; }
-  .sub { color:var(--muted); font-size:.82rem; margin:0 0 22px; }
-  h3 { color:var(--dim); font-size:.68rem; letter-spacing:.16em; text-transform:uppercase;
+  body { margin:0; background:var(--bg); color:var(--text); font-family:var(--ui);
+    -webkit-font-smoothing:antialiased; }
+  .wrap { min-height:100vh; background:var(--ground); max-width:1000px; margin:0 auto;
+    padding:calc(24px + env(safe-area-inset-top)) 30px calc(40px + env(safe-area-inset-bottom)); }
+  .top { display:flex; align-items:center; gap:13px; margin-bottom:22px; }
+  .top img { height:32px; }
+  .top .wm { font-weight:800; letter-spacing:.16em; font-size:15px; }
+  .nav { margin-left:auto; display:flex; gap:14px; }
+  .nav a { font:500 12px var(--ui); color:var(--dim); text-decoration:none; }
+  .nav a.on { font-weight:600; color:var(--accent-light);
+    border-bottom:2px solid var(--accent); padding-bottom:3px; }
+  .kick { font:600 11px var(--mono); letter-spacing:.22em; color:var(--muted); text-transform:uppercase; }
+  h2 { font-weight:900; font-size:34px; letter-spacing:-.02em; margin:4px 0 3px; }
+  .sub { color:var(--muted); font:400 13px var(--ui); margin:0 0 22px; }
+  h3 { color:var(--muted); font:600 11px var(--mono); letter-spacing:.2em; text-transform:uppercase;
     margin:28px 0 12px; }
-  .tiles { display:grid; grid-template-columns:repeat(3,1fr); gap:10px; }
-  @media(max-width:480px){ .tiles{ grid-template-columns:repeat(2,1fr); } }
-  .tile { background:var(--panel); border:1px solid var(--line); border-radius:14px;
-    padding:18px 6px 15px; text-align:center; }
-  .tile .tn { font-size:1.6rem; font-weight:800; color:var(--accent);
-    font-variant-numeric:tabular-nums; font-family:"Helvetica Neue",Arial,sans-serif; }
-  .tile .tl { font-size:.56rem; letter-spacing:.12em; text-transform:uppercase;
-    color:var(--muted); margin-top:6px; }
-  .tblwrap { overflow-x:auto; background:var(--panel); border:1px solid var(--line);
-    border-radius:14px; padding:6px 4px; }
-  table { border-collapse:collapse; width:100%; font-size:.78rem; }
-  th, td { text-align:right; padding:11px 14px; border-bottom:1px solid var(--line);
-    white-space:nowrap; font-variant-numeric:tabular-nums; }
+  .tiles { display:grid; grid-template-columns:repeat(3,1fr); gap:12px; }
+  @media(max-width:520px){ .tiles{ grid-template-columns:repeat(2,1fr); } }
+  .tile { background:var(--surface); border:1px solid var(--sborder); border-radius:12px;
+    padding:20px 22px; }
+  .tile .tn { font:800 40px var(--ui); letter-spacing:-.02em; color:var(--text);
+    font-variant-numeric:tabular-nums; }
+  .tile.eco { background:linear-gradient(135deg,rgba(145,132,217,.16),rgba(145,132,217,.04));
+    border-color:rgba(145,132,217,.32); }
+  .tile.eco .tn { background:linear-gradient(180deg,var(--accent-light),var(--accent));
+    -webkit-background-clip:text; background-clip:text; color:transparent; }
+  .tile.eco .tl { color:#b6a4ff; }
+  .tile .tl { font:600 10px var(--mono); letter-spacing:.16em; text-transform:uppercase;
+    color:var(--muted); margin-top:4px; }
+  .tblwrap { overflow-x:auto; background:var(--surface); border:1px solid var(--sborder);
+    border-radius:12px; }
+  table { border-collapse:collapse; width:100%; font:500 13px var(--ui); }
+  th, td { text-align:right; padding:13px 18px; border-bottom:1px solid rgba(255,255,255,.05);
+    white-space:nowrap; font-variant-numeric:tabular-nums; color:var(--sec); }
   tr:last-child td { border-bottom:none; }
   th:nth-child(2), td:nth-child(2) { text-align:left; }
-  th { color:var(--dim); font-size:.58rem; letter-spacing:.12em; text-transform:uppercase; }
-  .hog { background:var(--accent); color:#0b0f12; font-size:.55rem; font-weight:700;
-    letter-spacing:.08em; padding:3px 8px; border-radius:5px; }
-  .nem { background:#ff4d3d; color:#0b0f12; font-size:.55rem; font-weight:700;
-    letter-spacing:.08em; padding:3px 8px; border-radius:5px; }
-  .empty2 { color:var(--muted); font-size:.82rem; background:var(--panel);
-    border:1px solid var(--line); border-radius:14px; padding:20px; }
+  td:nth-child(2) { color:var(--text); font-weight:600; }
+  td:last-child, td:nth-last-child(2) { color:var(--sec); }
+  th { color:var(--dim); font:600 9.5px var(--mono); letter-spacing:.12em; text-transform:uppercase; }
+  .hog { background:linear-gradient(90deg,var(--accent),var(--accent-deep)); color:#12121a;
+    font:700 9px var(--mono); letter-spacing:.06em; padding:3px 8px; border-radius:5px; }
+  .nem { background:var(--danger); color:#12121a; font:700 9px var(--mono);
+    letter-spacing:.06em; padding:3px 8px; border-radius:5px; }
+  .empty2 { color:var(--muted); font:400 13px var(--ui); background:var(--surface);
+    border:1px solid var(--sborder); border-radius:12px; padding:20px; }
 </style></head><body><div class="wrap">
   <div class="top"><img src="/skull.png" alt=""><span class="wm">WITNESS</span>
-    <a class="back" href="/">&larr; Live</a></div>
+    <nav class="nav"><a href="/">Live</a><a href="/archive">Reels</a>
+      <a class="on">Stats</a><a href="/archive">Archive</a></nav></div>
+  <div class="kick">Career</div>
   <h2>Career stats</h2>
   <p class="sub">From every exfil screen WITNESS has captured. It only gets deeper from here.</p>
   <div class="tiles">%%CARDS%%</div>
