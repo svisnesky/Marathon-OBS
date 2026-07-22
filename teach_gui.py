@@ -24,15 +24,16 @@ sys.path.insert(0, BASE)
 import teach  # noqa: E402  (pure logic: ranking, phrase derivation, profile)
 
 # WITNESS brand tokens (match gui.py / the dashboard)
-BG = "#0b0f12"
-PANEL = "#12181d"
-PANEL_2 = "#161d26"
-ACCENT = "#9c58da"
-ACCENT_DIM = "#3a2a52"
-TEXT = "#e8edf0"
-MUTED = "#7d8a94"
-LINE = "#232d34"
-RED = "#ff4b42"
+# Broadcast palette (matches the web dashboard).
+BG = "#0e0e16"
+PANEL = "#17161f"
+PANEL_2 = "#1c1b27"
+ACCENT = "#9184d9"
+ACCENT_DIM = "#2b1c40"
+TEXT = "#e9e9ed"
+MUTED = "#8a90a0"
+LINE = "#2a2a38"
+RED = "#ff4d3d"
 
 HEAD = ("Segoe UI", 20, "bold")
 SUB = ("Segoe UI", 11)
@@ -133,7 +134,7 @@ class TeachWizard:
                       padx=22, pady=11, bd=0,
                       bg=ACCENT if primary else PANEL,
                       fg=BG if primary else TEXT,
-                      activebackground="#b071ee" if primary else LINE,
+                      activebackground="#a89dff" if primary else LINE,
                       activeforeground=BG if primary else TEXT)
         b.pack(side=side, padx=4)
         return b

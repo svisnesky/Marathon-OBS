@@ -22,12 +22,12 @@ sys.path.insert(0, BASE)
 UPDATE_MSG = ""   # set during boot  (auto-update self-test da7a37c) (behind the splash), read by ControlPanel
 app = None        # main module, imported during boot
 
-BG = "#0b0f12"
-PANEL = "#12181d"
-ACCENT = "#9c58da"
-TEXT = "#e8edf0"
-MUTED = "#7d8a94"
-LINE = "#232d34"
+BG = "#0e0e16"
+PANEL = "#17161f"
+ACCENT = "#9184d9"
+TEXT = "#e9e9ed"
+MUTED = "#8a90a0"
+LINE = "#2a2a38"
 RED = "#ff4b42"
 GREEN = "#5bd66b"
 
@@ -922,7 +922,7 @@ def _run_webview():
         st.bind_control(sess.start, sess.stop)
         webview.create_window("WITNESS", f"http://localhost:{port}",
                               width=960, height=660, min_size=(820, 560),
-                              background_color="#0b0f12")
+                              background_color="#0e0e16")
         ico = os.path.join(BASE, "witness.ico")
         try:
             webview.start(icon=ico)   # window / taskbar icon
