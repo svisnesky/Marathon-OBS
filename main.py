@@ -527,6 +527,110 @@ def _render_flags():
     return flags
 
 
+def _rss_mb() -> float:
+    """This process's working-set (RAM) in MB, dependency-free."""
+    try:
+        import psutil
+        return psutil.Process(os.getpid()).memory_info().rss / (1024 * 1024)
+    except Exception:
+        pass
+    if sys.platform == "win32":
+        try:
+            import ctypes
+            from ctypes import wintypes
+            class PMC(ctypes.Structure):
+                _fields_ = [("cb", wintypes.DWORD), ("PageFaultCount", wintypes.DWORD),
+                            ("PeakWorkingSetSize", ctypes.c_size_t), ("WorkingSetSize", ctypes.c_size_t),
+                            ("QuotaPeakPagedPoolUsage", ctypes.c_size_t), ("QuotaPagedPoolUsage", ctypes.c_size_t),
+                            ("QuotaPeakNonPagedPoolUsage", ctypes.c_size_t), ("QuotaNonPagedPoolUsage", ctypes.c_size_t),
+                            ("PagefileUsage", ctypes.c_size_t), ("PeakPagefileUsage", ctypes.c_size_t)]
+            c = PMC(); c.cb = ctypes.sizeof(PMC)
+            ctypes.windll.psapi.GetProcessMemoryInfo(
+                ctypes.windll.kernel32.GetCurrentProcess(), ctypes.byref(c), c.cb)
+            return c.WorkingSetSize / (1024 * 1024)
+        except Exception:
+            return 0.0
+    try:
+        import resource
+        r = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss
+        return r / (1024 * 1024) if sys.platform == "darwin" else r / 1024
+    except Exception:
+        return 0.0
+
+
+def _gpu_mb() -> float:
+    """CUDA memory reserved by torch, or 0 if not on GPU."""
+    try:
+        import torch
+        if torch.cuda.is_available():
+            return torch.cuda.memory_reserved() / (1024 * 1024)
+    except Exception:
+        pass
+    return 0.0
+
+
+def _start_perf_monitor(cfg, perf, mon_stop, get_kills):
+    """Background sampler: every few seconds log RAM, GPU memory, average OCR
+    loop work time and effective fps to logs/perf_<time>.csv (and a compact
+    line to the session log). Answers 'is memory creeping / is OCR keeping up
+    over a long session' without a profiler. Off with perf_log: false."""
+    if not cfg.get("perf_log", True):
+        return
+    every = max(2, int(cfg.get("perf_interval_seconds", 5)))
+    release_gpu = bool(cfg.get("perf_release_gpu", True))
+
+    def run():
+        import csv
+        base = os.path.dirname(os.path.abspath(__file__))
+        logdir = os.path.join(base, "logs")
+        try:
+            os.makedirs(logdir, exist_ok=True)
+            path = os.path.join(logdir, f"perf_{time.strftime('%Y-%m-%d_%H-%M-%S')}.csv")
+            f = open(path, "w", newline="", encoding="utf-8")
+        except Exception:
+            return
+        w = csv.writer(f)
+        w.writerow(["t_sec", "rss_mb", "gpu_mb", "avg_ocr_ms", "eff_fps", "kills", "threads"])
+        t0 = time.monotonic()
+        base_rss = None
+        last_gpu_release = t0
+        while not mon_stop.is_set():
+            mon_stop.wait(every)
+            if mon_stop.is_set():
+                break
+            iters = perf["iters"]; work = perf["work_sum"]
+            perf["iters"] = 0; perf["work_sum"] = 0.0
+            avg_ms = (work / iters) if iters else 0.0
+            fps = iters / every
+            rss = _rss_mb(); gpu = _gpu_mb()
+            if base_rss is None:
+                base_rss = rss
+            t = int(time.monotonic() - t0)
+            w.writerow([t, round(rss, 1), round(gpu, 1), round(avg_ms, 1),
+                        round(fps, 2), get_kills(), threading.active_count()])
+            f.flush()
+            # compact heartbeat in the session log (once per ~30s to stay quiet)
+            if t % 30 < every:
+                grew = f" (+{rss - base_rss:.0f}MB)" if rss - base_rss > 50 else ""
+                print(f"  [perf] RAM {rss/1024:.1f}GB{grew} · OCR {avg_ms:.0f}ms · {fps:.1f} fps")
+            # periodically hand unused CUDA cache back so RAM/VRAM doesn't creep
+            if release_gpu and time.monotonic() - last_gpu_release > 60:
+                last_gpu_release = time.monotonic()
+                try:
+                    import torch
+                    if torch.cuda.is_available():
+                        torch.cuda.empty_cache()
+                except Exception:
+                    pass
+        try:
+            f.close()
+            print(f"  [perf] log saved: {path}")
+        except Exception:
+            pass
+
+    threading.Thread(target=run, daemon=True).start()
+
+
 def _tune_performance(cfg):
     """Keep OCR from starving the game of CPU (the usual cause of frame drops):
     run this process at below-normal priority and cap how many CPU threads the
@@ -1260,6 +1364,11 @@ def _run_live_inner(cfg: dict, dry_run: bool = False, stop_event=None, on_count=
               f"suppress={cfg.get('suppress_phrases')}")
     print()
 
+    # performance sampler (RAM / OCR loop time / fps) -> logs/perf_*.csv
+    perf = {"iters": 0, "work_sum": 0.0}
+    mon_stop = threading.Event()
+    _start_perf_monitor(cfg, perf, mon_stop, lambda: s["count"])
+
     with make_capture(cfg) as cap:
         try:
             while not (stop_event is not None and stop_event.is_set()):
@@ -1300,10 +1409,14 @@ def _run_live_inner(cfg: dict, dry_run: bool = False, stop_event=None, on_count=
                 _check_manual_clip(s)
 
                 elapsed = time.monotonic() - loop_start
+                perf["iters"] += 1
+                perf["work_sum"] += elapsed * 1000.0   # ms of grab+OCR+detect
                 if elapsed < interval:
                     time.sleep(interval - elapsed)
         except KeyboardInterrupt:
             pass
+        finally:
+            mon_stop.set()   # stop the perf sampler
 
     _flush_coalesce(s)
     if s["web"] is not None:

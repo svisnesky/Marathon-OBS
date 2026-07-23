@@ -96,6 +96,12 @@ poll_fps: 5                 # frames/sec to capture + OCR. Higher = more chances
                             # catch a fast popup with a clean read (matters on CPU
                             # OCR). Lower if it hurts game FPS.
 ocr_threads: 2              # max CPU threads OCR may use (leaves cores for the game)
+perf_log: true              # log RAM / GPU mem / OCR loop time / fps every few
+                            # seconds to logs/perf_<time>.csv — open it after a
+                            # session to see if memory creeps or OCR falls behind
+perf_interval_seconds: 5    # how often the perf sampler writes a row
+perf_release_gpu: true      # hand unused CUDA cache back every ~60s (keeps VRAM/
+                            # RAM from creeping over a long session)
 min_save_interval_seconds: 2.0  # floor between OBS replay saves (avoid clip spam)
 kill_coalesce_seconds: 8.0  # after a kill, wait this long for more kills before
                             # saving one clip (groups down+finisher into one clip)
