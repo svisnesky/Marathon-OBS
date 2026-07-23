@@ -169,6 +169,7 @@ class LiveState:
         self.tag_counts = {}  # kill-type breakdown for the dashboard tiles
         self.update_msg = ""  # auto-updater status, shown in the dashboard
         self.version = ""     # current build (short sha), shown bottom-right
+        self.detect = {}      # live detection health (fps/device/vram), from perf monitor
         self._cfg = None       # live config dict (bound per session)
         self._save_cb = None   # persists changed settings to disk
 
@@ -277,6 +278,11 @@ class LiveState:
                 return self.reels[idx]["path"]
             return None
 
+    def set_detect(self, info: dict):
+        """Latest detection health from the perf monitor (fps/device/vram)."""
+        with self._lock:
+            self.detect = dict(info or {})
+
     def set_running(self, running):
         with self._lock:
             self.running = running
@@ -317,6 +323,7 @@ class LiveState:
             return {"running": self.running, "count": self.count,
                     "started": self.started, "elapsed": elapsed,
                     "update": self.update_msg, "version": self.version,
+                    "detect": dict(self.detect),
                     "tags": dict(self.tag_counts),
                     "events": list(self.events),
                     "reels": [{"i": i, "label": r["label"], "time": r["time"]}
@@ -681,6 +688,14 @@ def start_web(state, port, base_dir, host="0.0.0.0"):
                 elif path == "/addkill":
                     state.request_kill()
                     self._send(b'{"ok":true}', "application/json", cache=False)
+                elif path == "/benchmark":
+                    try:
+                        import benchmark
+                        result = benchmark.run_benchmark(state._cfg or {})
+                    except Exception as e:
+                        result = {"error": f"{type(e).__name__}: {e}"}
+                    self._send(json.dumps(result).encode(),
+                               "application/json", cache=False)
                 elif path == "/start":
                     state.fire_start()
                     self._send(b'{"ok":true}', "application/json", cache=False)
@@ -991,6 +1006,20 @@ PAGE = """<!doctype html><html lang="en"><head><meta charset="utf-8">
   .ctrls { display:flex; gap:8px; margin-top:22px; max-width:260px; }
   .mini { flex:1; background:var(--surface); color:var(--muted); border:1px solid var(--sborder);
     border-radius:8px; padding:9px 8px; font:500 11px var(--mono); letter-spacing:.06em; cursor:pointer; }
+  .detect { margin-top:22px; background:var(--surface); border:1px solid var(--sborder);
+    border-radius:12px; padding:14px 16px; max-width:420px;
+    display:flex; align-items:center; gap:14px; }
+  .detect .dbody { flex:1; min-width:0; }
+  .detect .dval { font:600 14px var(--ui); color:var(--text); margin-top:3px; }
+  .detect .dval .ok { color:var(--green); } .detect .dval .warn { color:var(--finisher); }
+  .detect .dval .dim { color:var(--dim); font-weight:500; }
+  .detect .dsub { font:500 11px var(--mono); color:var(--dim); margin-top:3px; }
+  .benchbtn { flex:none; background:transparent; color:var(--accent-light);
+    border:1px solid var(--accent-deep); border-radius:9px; padding:9px 16px;
+    font:700 11px var(--ui); letter-spacing:.06em; text-transform:uppercase; cursor:pointer;
+    transition:background .15s, transform .1s; }
+  .benchbtn:hover { background:rgba(145,132,217,.12); } .benchbtn:active { transform:scale(.97); }
+  .benchbtn:disabled { opacity:.55; cursor:default; }
   .hint { color:var(--dim); font:500 11px var(--ui); margin-top:16px; line-height:1.5; opacity:.85; }
   .ver { position:fixed; bottom:9px; right:14px; font:500 10px var(--mono);
     color:var(--dim); letter-spacing:.08em; opacity:.6; z-index:5; }
@@ -1111,6 +1140,14 @@ PAGE = """<!doctype html><html lang="en"><head><meta charset="utf-8">
     <div class="feed" id="feed"><div class="empty">Waiting for kills&hellip;</div></div>
   </section>
 
+  <div class="detect">
+    <div class="dbody">
+      <div class="kick">Detection</div>
+      <div class="dval" id="detectval"><span class="dim">Not measured yet</span></div>
+      <div class="dsub" id="detectsub">Press Benchmark to test OCR speed on this PC</div>
+    </div>
+    <button class="benchbtn" id="benchbtn" onclick="runBench()">Benchmark</button>
+  </div>
   <div class="ctrls">
     <button class="mini" id="snd" onclick="toggleSound()">SOUND: OFF</button>
     <button class="mini" id="fs" onclick="goFull()">Full screen</button>
@@ -1188,6 +1225,16 @@ PAGE = """<!doctype html><html lang="en"><head><meta charset="utf-8">
         : (d.running ? 'STARTING\\u2026' : 'Press START to begin watching');
       if (d.update){ document.getElementById('updmsg').textContent = 'Updater: ' + d.update; }
       if (d.version){ document.getElementById('ver').textContent = 'WITNESS \\u00b7 ' + d.version; }
+      if (d.running && d.detect && typeof d.detect.fps === 'number'){
+        var v = d.detect;
+        var cls = v.fps >= 4 ? 'ok' : (v.fps >= 2.5 ? '' : 'warn');
+        document.getElementById('detectval').innerHTML =
+          '<span class="'+cls+'">'+v.fps.toFixed(1)+' fps</span> <span class="dim">\\u00b7 '+(v.device||'')+'</span>';
+        document.getElementById('detectsub').textContent =
+          (v.engine||'easyocr') + ' \\u00b7 ' +
+          (v.vram_mb ? (v.vram_mb/1024).toFixed(1)+' GB VRAM' : (v.device==='CPU'?'CPU':'')) +
+          ' \\u00b7 live';
+      }
       var rb = document.getElementById('runbtn');
       if (!runBusy){
         rb.className = 'runbtn' + (d.running ? ' on' : '');
@@ -1388,6 +1435,37 @@ PAGE = """<!doctype html><html lang="en"><head><meta charset="utf-8">
     btn.classList.add('fired');
     try { await fetch('/clip', {method:'POST'}); } catch(e){}
     setTimeout(function(){ btn.textContent='SAVE CLIP'; btn.classList.remove('fired'); }, 1500);
+  }
+
+  async function runBench(){
+    var btn = document.getElementById('benchbtn');
+    var val = document.getElementById('detectval');
+    var sub = document.getElementById('detectsub');
+    var label = btn.textContent;
+    btn.disabled = true; btn.textContent = 'Running\\u2026';
+    val.innerHTML = '<span class="dim">Measuring\\u2026</span>';
+    sub.textContent = 'OCRing a test frame — a few seconds';
+    try {
+      var r = await fetch('/benchmark', {method:'POST'});
+      var d = await r.json();
+      if (d.error){
+        val.innerHTML = '<span class="warn">Benchmark failed</span>';
+        sub.textContent = String(d.error).slice(0,80);
+      } else {
+        var cls = d.keeps_up ? 'ok' : 'warn';
+        val.innerHTML = '<span class="'+cls+'">'+Number(d.throughput_fps).toFixed(1)+
+          ' fps</span> <span class="dim">OCR \\u00b7 '+d.device+'</span>';
+        var vram = d.vram_mb ? (d.vram_mb/1024).toFixed(1)+' GB VRAM' : 'CPU';
+        var verdict = d.comfortable ? 'plenty of headroom'
+          : (d.keeps_up ? 'keeps up with '+d.poll_fps+' fps'
+                        : 'below '+d.poll_fps+' fps target — try ocr_max_dim: 640');
+        sub.textContent = d.engine+' \\u00b7 '+d.avg_ms+' ms/frame \\u00b7 '+vram+' \\u00b7 '+verdict;
+      }
+    } catch(e){
+      val.innerHTML = '<span class="warn">Benchmark failed</span>';
+      sub.textContent = 'could not reach the server';
+    }
+    btn.disabled = false; btn.textContent = label;
   }
 
   async function addKill(){

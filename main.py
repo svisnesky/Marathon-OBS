@@ -588,7 +588,7 @@ def _gpu_mb() -> float:
     return 0.0
 
 
-def _start_perf_monitor(cfg, perf, mon_stop, get_kills):
+def _start_perf_monitor(cfg, perf, mon_stop, get_kills, web=None):
     """Background sampler: every few seconds log RAM, GPU memory, average OCR
     loop work time and effective fps to logs/perf_<time>.csv (and a compact
     line to the session log). Answers 'is memory creeping / is OCR keeping up
@@ -631,6 +631,15 @@ def _start_perf_monitor(cfg, perf, mon_stop, get_kills):
             w.writerow([t, round(rss, 1), round(gpu, 1), round(avg_ms, 1),
                         round(fps, 2), get_kills(), threading.active_count()])
             f.flush()
+            # push live detection health to the dashboard's DETECTION panel
+            if web is not None:
+                try:
+                    web.set_detect({"fps": round(fps, 1), "avg_ms": round(avg_ms),
+                                    "device": "GPU" if gpu > 0 else "CPU",
+                                    "vram_mb": round(gpu),
+                                    "engine": cfg.get("ocr_engine", "easyocr")})
+                except Exception:
+                    pass
             # compact heartbeat in the session log (once per ~30s to stay quiet)
             if t % 30 < every:
                 grew = f" (+{rss - base_rss:.0f}MB)" if rss - base_rss > 50 else ""
@@ -1414,7 +1423,7 @@ def _run_live_inner(cfg: dict, dry_run: bool = False, stop_event=None, on_count=
     # performance sampler (RAM / OCR loop time / fps) -> logs/perf_*.csv
     perf = {"iters": 0, "work_sum": 0.0}
     mon_stop = threading.Event()
-    _start_perf_monitor(cfg, perf, mon_stop, lambda: s["count"])
+    _start_perf_monitor(cfg, perf, mon_stop, lambda: s["count"], web=s["web"])
 
     with make_capture(cfg) as cap:
         try:
