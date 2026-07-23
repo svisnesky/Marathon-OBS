@@ -426,14 +426,35 @@ def stat_line(kills: int, stats: dict, potg_tag: str = "",
                 f"{_cap(who)} put {ks} in the dirt tonight.",
                 f"Count 'em: {ks} down for {who}.",
             ]
-    closers = [
-        "The tape remembers — it always does.",
-        "Replay it. They can't.",
-        "Another one for the record books, and the record never forgets.",
-        "That's your highlight. Try not to blink.",
-        "The house always wins. Roll it back.",
-        "Savor it, folks. They didn't get to.",
-        "See you in the next one — if you're lucky.",
-    ]
+    # The closer carries the outcome: triumphant if you extracted, bittersweet
+    # if the arena got you, neutral if we couldn't read the header.
+    result = (stats or {}).get("outcome", "")
+    if result == "survived":
+        closers = [
+            "The house always wins — and tonight, so did he.",
+            "Bagged it and walked out clean. Roll it back.",
+            "Another clean getaway, pockets full. That's the show.",
+            "Extraction secured. The arena will remember this one.",
+            "He took the loot and the lights stayed on. Savor it.",
+            "Walked out breathing. The record stands, and so does he.",
+        ]
+    elif result == "died":
+        closers = [
+            "...but the arena took him in the end. The tape doesn't lie.",
+            "...and then the lights went out. They got the last word tonight.",
+            "He made them bleed — but he didn't make it home. Roll it back.",
+            "A hell of a run, cut short. The pit always collects.",
+            "The scoreboard was his; the exit wasn't. So close.",
+            "They got him in the end. Even the best feed the arena.",
+        ]
+    else:
+        closers = [
+            "The tape remembers — it always does.",
+            "Replay it. They can't.",
+            "Another one for the record books, and the record never forgets.",
+            "That's your highlight. Try not to blink.",
+            "Savor it, folks. They didn't get to.",
+            "See you in the next one — if you're lucky.",
+        ]
     return " ".join([random.choice(openers), random.choice(reports),
                      random.choice(closers)])
