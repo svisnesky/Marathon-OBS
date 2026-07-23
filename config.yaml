@@ -100,8 +100,10 @@ perf_log: true              # log RAM / GPU mem / OCR loop time / fps every few
                             # seconds to logs/perf_<time>.csv — open it after a
                             # session to see if memory creeps or OCR falls behind
 perf_interval_seconds: 5    # how often the perf sampler writes a row
-perf_release_gpu: true      # hand unused CUDA cache back every ~60s (keeps VRAM/
-                            # RAM from creeping over a long session)
+perf_release_gpu: false     # force-release CUDA cache every ~60s. OFF by default:
+                            # EasyOCR's cache is bounded, not leaking, so releasing
+                            # just makes torch re-allocate and can slow OCR. Only turn
+                            # on if a perf log shows GPU memory genuinely climbing.
 min_save_interval_seconds: 2.0  # floor between OBS replay saves (avoid clip spam)
 kill_coalesce_seconds: 8.0  # after a kill, wait this long for more kills before
                             # saving one clip (groups down+finisher into one clip)
@@ -109,7 +111,11 @@ kill_coalesce_seconds: 8.0  # after a kill, wait this long for more kills before
 # --- OCR ---
 # engine: "easyocr" (GPU, robust, heavier) or "tesseract" (light, needs install)
 ocr_engine: "easyocr"
-ocr_upscale: 3             # upscale the cropped region Nx before OCR (helps small fonts)
+ocr_upscale: 3             # upscale the cropped region Nx before OCR (helps small fonts).
+                          # Capped by ocr_max_dim so it never makes a giant, slow image.
+ocr_max_dim: 800          # hard cap on the long side of the image fed to OCR. Bounds
+                          # OCR time (the popup text is large; 800px is plenty). Lower
+                          # (e.g. 640) = faster OCR / less GPU contention with the game.
 
 # --- OBS (obs-websocket v5, built into OBS 28+) ---
 obs:

@@ -493,7 +493,7 @@ def run_test_image(cfg: dict, image_path: str):
     img = cv2.imread(image_path)
     if img is None:
         raise SystemExit(f"Could not read image: {image_path}")
-    engine = OCREngine(cfg.get("ocr_engine", "easyocr"), cfg.get("ocr_upscale", 3))
+    engine = OCREngine(cfg.get("ocr_engine", "easyocr"), cfg.get("ocr_upscale", 3), max_dim=cfg.get("ocr_max_dim", 800))
     print(f"OCR ({engine.engine_name}) on {image_path} ...")
     lines = engine.read_lines(img)
     print(f"Read {len(lines)} line(s) from the region:")
@@ -545,11 +545,23 @@ def _rss_mb() -> float:
                             ("QuotaPeakNonPagedPoolUsage", ctypes.c_size_t), ("QuotaNonPagedPoolUsage", ctypes.c_size_t),
                             ("PagefileUsage", ctypes.c_size_t), ("PeakPagefileUsage", ctypes.c_size_t)]
             c = PMC(); c.cb = ctypes.sizeof(PMC)
-            ctypes.windll.psapi.GetProcessMemoryInfo(
-                ctypes.windll.kernel32.GetCurrentProcess(), ctypes.byref(c), c.cb)
-            return c.WorkingSetSize / (1024 * 1024)
+            h = ctypes.windll.kernel32.GetCurrentProcess()
+            # K32GetProcessMemoryInfo (kernel32) is the reliable Win10+ export;
+            # psapi.GetProcessMemoryInfo can be missing/fail (RAM logged as 0).
+            ok = False
+            for dll, fn in ((ctypes.windll.kernel32, "K32GetProcessMemoryInfo"),
+                            (ctypes.windll.psapi, "GetProcessMemoryInfo")):
+                try:
+                    if getattr(dll, fn)(h, ctypes.byref(c), c.cb):
+                        ok = True
+                        break
+                except Exception:
+                    continue
+            if ok:
+                return c.WorkingSetSize / (1024 * 1024)
         except Exception:
-            return 0.0
+            pass
+        return 0.0
     try:
         import resource
         r = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss
@@ -577,7 +589,10 @@ def _start_perf_monitor(cfg, perf, mon_stop, get_kills):
     if not cfg.get("perf_log", True):
         return
     every = max(2, int(cfg.get("perf_interval_seconds", 5)))
-    release_gpu = bool(cfg.get("perf_release_gpu", True))
+    # Off by default: EasyOCR's CUDA cache is bounded, not leaking, so forcing
+    # empty_cache() just makes torch re-allocate (cudaMalloc) and can SLOW the
+    # next OCR. Only turn on if a perf log actually shows GPU memory climbing.
+    release_gpu = bool(cfg.get("perf_release_gpu", False))
 
     def run():
         import csv
@@ -1334,7 +1349,7 @@ def _run_live_inner(cfg: dict, dry_run: bool = False, stop_event=None, on_count=
     from ocr import OCREngine
 
     _tune_performance(cfg)
-    engine = OCREngine(cfg.get("ocr_engine", "easyocr"), cfg.get("ocr_upscale", 3))
+    engine = OCREngine(cfg.get("ocr_engine", "easyocr"), cfg.get("ocr_upscale", 3), max_dim=cfg.get("ocr_max_dim", 800))
     s = _setup_session(cfg, dry_run)
 
     poll_fps = max(1, cfg.get("poll_fps", 5))
@@ -1763,7 +1778,7 @@ def run_bench(cfg, frames: int = 25):
     except Exception:
         pass
 
-    engine = OCREngine(cfg.get("ocr_engine", "easyocr"), cfg.get("ocr_upscale", 3))
+    engine = OCREngine(cfg.get("ocr_engine", "easyocr"), cfg.get("ocr_upscale", 3), max_dim=cfg.get("ocr_max_dim", 800))
     poll_fps = max(1, cfg.get("poll_fps", 5))
     budget_ms = 1000.0 / poll_fps
 

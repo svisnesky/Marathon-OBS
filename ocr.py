@@ -12,15 +12,35 @@ import cv2
 import numpy as np
 
 
-def preprocess(img_bgr: np.ndarray, upscale: int = 3, binarize: bool = True) -> np.ndarray:
-    """Upscale + grayscale, optionally hard-thresholded to a bilevel image.
+# Cap the long side of the image actually fed to OCR. Upscaling the region Nx
+# helps small fonts, but on a high-res capture Nx makes a huge image that takes
+# 300-800ms/frame to OCR — which starves the game. The reward popup text is
+# large, so ~800px is plenty; this bounds OCR cost regardless of resolution.
+OCR_MAX_DIM = 800
 
-    Otsu binarization helps Tesseract, but tends to HURT the neural OCR
-    (EasyOCR) on busy/varied backgrounds — there, feed the upscaled grayscale."""
-    if upscale and upscale > 1:
-        img_bgr = cv2.resize(
-            img_bgr, None, fx=upscale, fy=upscale, interpolation=cv2.INTER_CUBIC
-        )
+
+def _target_scale(h: int, w: int, upscale, max_dim: int = OCR_MAX_DIM) -> float:
+    """Scale factor to apply: the requested upscale, but clamped so the long
+    side never exceeds max_dim (and downscaled if the region is already big)."""
+    s = float(upscale or 1)
+    longest = max(h, w)
+    if max_dim and longest * s > max_dim:
+        s = max_dim / longest
+    return s
+
+
+def preprocess(img_bgr: np.ndarray, upscale: int = 3, binarize: bool = True,
+               max_dim: int = OCR_MAX_DIM) -> np.ndarray:
+    """Scale + grayscale, optionally hard-thresholded to a bilevel image.
+
+    Scaling is capped (see _target_scale/OCR_MAX_DIM) so OCR stays fast on any
+    resolution. Otsu binarization helps Tesseract, but tends to HURT the neural
+    OCR (EasyOCR) on busy/varied backgrounds — there, feed the scaled grayscale."""
+    h, w = img_bgr.shape[:2]
+    s = _target_scale(h, w, upscale, max_dim)
+    if abs(s - 1.0) > 0.01:
+        interp = cv2.INTER_CUBIC if s > 1 else cv2.INTER_AREA
+        img_bgr = cv2.resize(img_bgr, None, fx=s, fy=s, interpolation=interp)
     gray = cv2.cvtColor(img_bgr, cv2.COLOR_BGR2GRAY)
     if not binarize:
         return gray
@@ -33,9 +53,11 @@ def preprocess(img_bgr: np.ndarray, upscale: int = 3, binarize: bool = True) -> 
 class OCREngine:
     """Wrapper that lazily loads whichever backend is configured."""
 
-    def __init__(self, engine: str = "easyocr", upscale: int = 3, languages=("en",)):
+    def __init__(self, engine: str = "easyocr", upscale: int = 3, languages=("en",),
+                 max_dim: int = OCR_MAX_DIM):
         self.engine_name = engine
         self.upscale = upscale
+        self.max_dim = int(max_dim or OCR_MAX_DIM)
         self.languages = list(languages)
         self._reader = None      # easyocr
         self._loaded = False
@@ -59,14 +81,14 @@ class OCREngine:
 
         if self.engine_name == "easyocr":
             # neural OCR does better on grayscale than a hard-thresholded image
-            proc = preprocess(img_bgr, self.upscale, binarize=False)
+            proc = preprocess(img_bgr, self.upscale, binarize=False, max_dim=self.max_dim)
             results = self._reader.readtext(proc, detail=0, paragraph=True)
             return [r for r in results if r and r.strip()]
 
         # tesseract needs a clean bilevel image
         import pytesseract
 
-        proc = preprocess(img_bgr, self.upscale, binarize=True)
+        proc = preprocess(img_bgr, self.upscale, binarize=True, max_dim=self.max_dim)
         text = pytesseract.image_to_string(proc)
         return [ln.strip() for ln in text.splitlines() if ln.strip()]
 
@@ -79,8 +101,8 @@ class OCREngine:
         if self.engine_name != "easyocr":
             return [(ln, (0, 0, w, h)) for ln in self.read_lines(img_bgr)]
 
-        proc = preprocess(img_bgr, self.upscale, binarize=False)
-        scale = float(self.upscale or 1)
+        proc = preprocess(img_bgr, self.upscale, binarize=False, max_dim=self.max_dim)
+        scale = _target_scale(h, w, self.upscale, self.max_dim)  # match preprocess's scale
         out = []
         for box, text, _conf in self._reader.readtext(proc, detail=1, paragraph=False):
             if not text or not text.strip():
@@ -99,7 +121,7 @@ class OCREngine:
         if self.engine_name != "easyocr":
             return self.read_lines(img_bgr)
 
-        proc = preprocess(img_bgr, self.upscale, binarize=False)
+        proc = preprocess(img_bgr, self.upscale, binarize=False, max_dim=self.max_dim)
         results = self._reader.readtext(proc, detail=1, paragraph=False)
         items = []
         for box, text, _conf in results:
