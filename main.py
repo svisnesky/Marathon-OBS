@@ -867,6 +867,17 @@ def _register_replay_async(s, clip_path, tag, count):
     threading.Thread(target=work, daemon=True).start()
 
 
+def _kill_count(tags) -> int:
+    """How many REAL kills a list of event tags represents. Downs/precision are
+    kills; a standalone finisher/elim (not landing on one of those downs) is a
+    kill; a manual +1 is a kill. Assists are NOT kills (someone else's), and a
+    finisher on your own down is the same kill, not a new one."""
+    n_downs = sum(1 for t in tags if t in ("down", "precision"))
+    n_finish = sum(1 for t in tags if t in ("finisher", "elim", "kill"))
+    n_manual = sum(1 for t in tags if t == "manual")
+    return n_downs + max(0, n_finish - n_downs) + n_manual
+
+
 def _flush_coalesce(s):
     """Save one replay clip for all kills accumulated in the coalesce window."""
     pending = s.get("_coalesce_pending")
@@ -880,6 +891,7 @@ def _flush_coalesce(s):
     # A multikill means multiple DISTINCT downs — a down followed by the
     # finisher on the same runner is ONE kill, not a double.
     n_downs = sum(1 for t in tags if t in ("down", "precision"))
+    clip_kills = _kill_count(tags)   # assists excluded; own-finisher not doubled
     if n_downs >= 2 and not s.get("clutch"):
         if s["cfg"].get("overlay_multikill", True):
             show_text_overlay(s["cfg"],
@@ -894,7 +906,7 @@ def _flush_coalesce(s):
         if s["organize"]:
             rename_clip_async(s["obs"], s["session_id"], combo_tag, counts[0],
                               on_done=_clip_ready_callback(s, combo_tag, counts[0],
-                                                           kills=max(1, n_downs)))
+                                                           kills=clip_kills))
     s["_coalesce_pending"] = []
     s["_coalesce_deadline"] = 0.0
 
@@ -916,13 +928,18 @@ def _handle_kill(cfg, ev, s, on_count=None):
     own_finisher = (tag == "finisher"
                     and any(p["tag"] in ("down", "precision")
                             for p in s.get("_coalesce_pending", [])))
-    if not own_finisher:
+    # An assist is someone ELSE's kill — it belongs in the breakdown, not the
+    # kill count. An own-finisher is the same kill as your down. Neither bumps
+    # the headline counter; both are still recorded for the breakdown.
+    counts_as_kill = (tag != "assist") and not own_finisher
+    if counts_as_kill:
         s["count"] += 1
     count = s["count"]
     s["session_tags"].append(tag)
     s.setdefault("match_tags", []).append(tag)  # reset each exfil for the audit
-    print(f"KILL #{count} [{tag}]: {ev.raw_line!r}")
-    if s.get("clutch") and not own_finisher:
+    print((f"KILL #{count}" if counts_as_kill else f"(not a kill: {tag})")
+          + f" [{tag}]: {ev.raw_line!r}")
+    if s.get("clutch") and counts_as_kill:
         s["clutch_kills"] = s.get("clutch_kills", 0) + 1
         print(f"  [clutch] solo kill #{s['clutch_kills']} — staying quiet")
 
@@ -1555,7 +1572,7 @@ def _session_clips_from_dir(session_dir: str):
         # NNN_tag_time.ext  ->  tag
         parts = f.split("_")
         tag = parts[1] if len(parts) >= 3 else "kill"
-        kills = len([p for p in tag.split("+") if p]) or 1
+        kills = _kill_count([p for p in tag.split("+") if p])
         out.append({"path": os.path.join(session_dir, f), "kills": kills, "tag": tag})
     return out
 
