@@ -544,21 +544,28 @@ def _rss_mb() -> float:
                             ("QuotaPeakPagedPoolUsage", ctypes.c_size_t), ("QuotaPagedPoolUsage", ctypes.c_size_t),
                             ("QuotaPeakNonPagedPoolUsage", ctypes.c_size_t), ("QuotaNonPagedPoolUsage", ctypes.c_size_t),
                             ("PagefileUsage", ctypes.c_size_t), ("PeakPagefileUsage", ctypes.c_size_t)]
-            c = PMC(); c.cb = ctypes.sizeof(PMC)
-            h = ctypes.windll.kernel32.GetCurrentProcess()
+            kernel32 = ctypes.windll.kernel32
+            # HANDLE is pointer-sized: without c_void_p restype the 64-bit
+            # pseudo-handle gets truncated to a 32-bit int and the call fails
+            # (that's why RAM logged as 0).
+            kernel32.GetCurrentProcess.restype = ctypes.c_void_p
             # K32GetProcessMemoryInfo (kernel32) is the reliable Win10+ export;
-            # psapi.GetProcessMemoryInfo can be missing/fail (RAM logged as 0).
-            ok = False
-            for dll, fn in ((ctypes.windll.kernel32, "K32GetProcessMemoryInfo"),
-                            (ctypes.windll.psapi, "GetProcessMemoryInfo")):
-                try:
-                    if getattr(dll, fn)(h, ctypes.byref(c), c.cb):
-                        ok = True
-                        break
-                except Exception:
+            # fall back to psapi.GetProcessMemoryInfo on older builds.
+            fn = None
+            for dll_name in ("kernel32", "psapi"):
+                dll = getattr(ctypes.windll, dll_name, None)
+                if dll is None:
                     continue
-            if ok:
-                return c.WorkingSetSize / (1024 * 1024)
+                fn = (getattr(dll, "K32GetProcessMemoryInfo", None)
+                      or getattr(dll, "GetProcessMemoryInfo", None))
+                if fn is not None:
+                    break
+            if fn is not None:
+                fn.argtypes = [ctypes.c_void_p, ctypes.POINTER(PMC), wintypes.DWORD]
+                fn.restype = wintypes.BOOL
+                c = PMC(); c.cb = ctypes.sizeof(PMC)
+                if fn(kernel32.GetCurrentProcess(), ctypes.byref(c), c.cb):
+                    return c.WorkingSetSize / (1024 * 1024)
         except Exception:
             pass
         return 0.0
