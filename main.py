@@ -1556,6 +1556,43 @@ def _end_session(cfg, tags, start_monotonic, start_wall, dry_run, obs=None,
         except Exception as e:
             print(f"(montage error: {e})")
 
+    # WITNESS Report — the end-of-night dossier (written case file + spoken).
+    if cfg.get("witness_report", True):
+        try:
+            import witness_report
+            base = os.path.dirname(os.path.abspath(__file__))
+            try:
+                import encounters
+                victims, killers = encounters.boards(base)
+            except Exception:
+                victims, killers = [], []
+            rep = witness_report.build_report(
+                session, victims, killers,
+                player=cfg.get("announcer_player_name", ""))
+            print("\n" + "\n".join(rep["lines"]))
+            if session_dir:
+                try:
+                    with open(os.path.join(session_dir, "witness_report.txt"),
+                              "w", encoding="utf-8") as f:
+                        f.write("\n".join(rep["lines"]))
+                except OSError:
+                    pass
+            if cfg.get("witness_report_voice", cfg.get("reel_announcer", True)) and session_dir:
+                try:
+                    import announcer
+                    wav = announcer.synth_to_wav(
+                        rep["speech"],
+                        os.path.join(session_dir, "witness_report_tts.wav"),
+                        voice=cfg.get("announcer_voice", announcer.DEFAULT_VOICE),
+                        pitch=cfg.get("announcer_pitch", announcer.DEFAULT_PITCH),
+                        eleven_voice=cfg.get("elevenlabs_voice_id", ""))
+                    if wav:
+                        print(f"  [report] spoken dossier -> {wav}")
+                except Exception as e:
+                    print(f"  [report] voice failed: {e}")
+        except Exception as e:
+            print(f"(witness report error: {e})")
+
     # Vertical Shorts render of each clip (needs ffmpeg + organized clips).
     if cfg.get("make_shorts", True) and session_dir:
         try:

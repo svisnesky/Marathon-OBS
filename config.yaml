@@ -100,6 +100,10 @@ perf_log: true              # log RAM / GPU mem / OCR loop time / fps every few
                             # seconds to logs/perf_<time>.csv — open it after a
                             # session to see if memory creeps or OCR falls behind
 perf_interval_seconds: 5    # how often the perf sampler writes a row
+witness_report: true        # end-of-night WITNESS Report dossier (written case
+                            # file saved to the session folder + printed)
+witness_report_voice: true  # also render a spoken dossier (uses the announcer
+                            # voice); falls back to reel_announcer if unset
 perf_release_gpu: false     # force-release CUDA cache every ~60s. OFF by default:
                             # EasyOCR's cache is bounded, not leaking, so releasing
                             # just makes torch re-allocate and can slow OCR. Only turn
