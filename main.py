@@ -1642,6 +1642,7 @@ def _end_session(cfg, tags, start_monotonic, start_wall, dry_run, obs=None,
             print(f"(montage error: {e})")
 
     # WITNESS Report — the end-of-night dossier (written case file + spoken).
+    report_speech = ""   # narration text, reused as the session reel's voiceover
     if cfg.get("witness_report", True):
         try:
             import witness_report
@@ -1654,6 +1655,7 @@ def _end_session(cfg, tags, start_monotonic, start_wall, dry_run, obs=None,
             rep = witness_report.build_report(
                 session, victims, killers,
                 player=cfg.get("announcer_player_name", ""))
+            report_speech = rep["speech"]
             print("\n" + "\n".join(rep["lines"]))
             if session_dir:
                 try:
@@ -1732,7 +1734,8 @@ def _end_session(cfg, tags, start_monotonic, start_wall, dry_run, obs=None,
     # optional unlisted YouTube upload of just that one video.
     if session_dir and (cfg.get("make_session_reel", True)
                         or cfg.get("youtube_upload_session_reel", False)):
-        _build_session_reel_and_upload(cfg, session_dir, tags)
+        _build_session_reel_and_upload(cfg, session_dir, tags,
+                                       report_speech=report_speech)
 
 
 def _session_clips_from_dir(session_dir: str):
@@ -1764,7 +1767,7 @@ def _yt_upload(cfg, base, path, title, desc):
         print(f"  [youtube] error: {e}")
 
 
-def _build_session_reel_and_upload(cfg, session_dir, tags):
+def _build_session_reel_and_upload(cfg, session_dir, tags, report_speech=""):
     try:
         import match_reel
         import montage
@@ -1776,7 +1779,7 @@ def _build_session_reel_and_upload(cfg, session_dir, tags):
         ffmpeg = montage.find_ffmpeg(base, cfg)
         out = os.path.join(session_dir, "session_reel.mp4")
         c = Counter(tags)
-        total = len(tags)
+        total = _kill_count(tags)   # real kills, not every event tag
         sub = [f"{c.get('finisher',0)} FINISHERS  ·  {c.get('precision',0)} PRECISION  "
                f"·  {c.get('assist',0)} ASSISTS",
                time.strftime("%Y-%m-%d")]
@@ -1791,6 +1794,31 @@ def _build_session_reel_and_upload(cfg, session_dir, tags):
         if not ok:
             print("  [session reel] build failed")
             return
+
+        # Bake the WITNESS Report dossier in as the reel's voiceover — that's
+        # where the spoken report actually earns its keep (nobody opens a lone
+        # mp3). The narrated version replaces the silent session_reel.mp4.
+        if report_speech and cfg.get("witness_report_on_reel", True):
+            try:
+                import announcer
+                wav = announcer.synth_to_wav(
+                    report_speech,
+                    os.path.join(session_dir, "_session_dossier.wav"),
+                    voice=cfg.get("announcer_voice", announcer.DEFAULT_VOICE),
+                    pitch=cfg.get("announcer_pitch", announcer.DEFAULT_PITCH),
+                    eleven_voice=cfg.get("elevenlabs_voice_id", ""))
+                if wav:
+                    narrated = os.path.join(session_dir, "_session_reel_vo.mp4")
+                    if match_reel.add_announcer(out, narrated, wav, ffmpeg):
+                        os.replace(narrated, out)   # session_reel.mp4 now narrated
+                        print("  [session reel] WITNESS Report dossier mixed in")
+                    try:
+                        os.remove(wav)
+                    except OSError:
+                        pass
+            except Exception as e:
+                print(f"  [session reel] dossier mix skipped: {e}")
+
         print(f"  [session reel] -> {out}")
 
         if cfg.get("youtube_upload_session_reel", False):
